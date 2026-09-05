@@ -406,6 +406,22 @@ async function handleMediaProxy(req, res, targetUrl) {
  */
 async function handle3gpStream(req, res, targetUrl, gatewayHost) {
     try {
+        let reqUrl;
+        try {
+            reqUrl = new URL(req.url, `http://${gatewayHost}`);
+        } catch (e) {
+            reqUrl = new URL(targetUrl, `http://${gatewayHost}`);
+        }
+        const rawRes = (reqUrl.searchParams.get('res') || reqUrl.searchParams.get('q') || '380p').toLowerCase();
+        let resProfile = '380p';
+        if (rawRes === '144p' || rawRes === 'qcif') {
+            resProfile = '144p';
+        } else if (rawRes === '240p' || rawRes === 'qvga') {
+            resProfile = '240p';
+        } else {
+            resProfile = '380p'; // default: up to 380p high quality
+        }
+
         let videoUrl = targetUrl;
         if (videoUrl.includes('/media?url=')) {
             try {
@@ -417,20 +433,21 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             videoUrl += (videoUrl.includes('?') ? '&' : '?') + 'webm=1';
         }
 
-        let cacheKey = null;
+        let cacheBase = null;
         if (youtube.isYouTubeUrl(videoUrl)) {
             const vId = youtube.extractVideoId(videoUrl);
-            cacheKey = 'yt_' + (vId || Buffer.from(videoUrl).toString('hex').substring(0, 16));
+            cacheBase = 'yt_' + (vId || Buffer.from(videoUrl).toString('hex').substring(0, 16));
         } else {
             try {
                 const u = new URL(videoUrl);
-                cacheKey = u.searchParams.get('video_id') || u.searchParams.get('v');
+                cacheBase = u.searchParams.get('video_id') || u.searchParams.get('v');
             } catch (e) {}
-            if (!cacheKey) {
-                cacheKey = Buffer.from(videoUrl).toString('hex').substring(0, 16);
+            if (!cacheBase) {
+                cacheBase = Buffer.from(videoUrl).toString('hex').substring(0, 16);
             }
         }
 
+        const cacheKey = `${cacheBase}_${resProfile}`;
         const cacheDir = path.join(__dirname, 'cache', '3gp');
         if (!fs.existsSync(cacheDir)) {
             fs.mkdirSync(cacheDir, { recursive: true });
@@ -442,8 +459,36 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             return serveStatic3gp(req, res, cachedFilePath, cacheKey);
         }
 
-        console.log(`[3GP Streamer] Transcoding video to 3GP on the fly: ${videoUrl}`);
+        console.log(`[3GP Streamer] Transcoding video to 3GP (${resProfile}) on the fly: ${videoUrl}`);
         const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
+
+        let vcodec, vbitrate, fps, acodec, audioArgs, videoFilter, sizeArgs;
+        if (resProfile === '144p') {
+            vcodec = 'h263';
+            vbitrate = '128k';
+            fps = '15';
+            acodec = 'libopencore_amrnb';
+            audioArgs = ['-ar', '8000', '-ac', '1', '-b:a', '12.2k'];
+            sizeArgs = ['-s', '176x144'];
+            videoFilter = null;
+        } else if (resProfile === '240p') {
+            vcodec = 'mpeg4';
+            vbitrate = '350k';
+            fps = '20';
+            acodec = 'aac';
+            audioArgs = ['-ar', '32000', '-ac', '2', '-b:a', '48k'];
+            sizeArgs = null;
+            videoFilter = "scale='min(320,iw)':min'(240,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
+        } else {
+            // 380p profile (up to 380p, MPEG-4 Simple Profile + AAC stereo in 3GP)
+            vcodec = 'mpeg4';
+            vbitrate = '550k';
+            fps = '24';
+            acodec = 'aac';
+            audioArgs = ['-ar', '32000', '-ac', '2', '-b:a', '64k'];
+            sizeArgs = null;
+            videoFilter = "scale='min(640,iw)':min'(380,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
+        }
 
         const isYt = youtube.isYouTubeUrl(videoUrl);
 
@@ -458,13 +503,20 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
 
             const transcodePromise = (async () => {
                 const ytDlpPath = path.join(__dirname, '..', 'tools', 'yt-dlp');
-                const tmpV = path.join(cacheDir, `${cacheKey}_tmp_v.mp4`);
-                const tmpA = path.join(cacheDir, `${cacheKey}_tmp_a.m4a`);
+                const tmpV = path.join(cacheDir, `${cacheKey}_tmp_v_${Date.now()}.mp4`);
+                const tmpA = path.join(cacheDir, `${cacheKey}_tmp_a_${Date.now()}.m4a`);
+                const tmp3gp = path.join(cacheDir, `${cacheKey}_tmp_${Date.now()}.3gp`);
 
-                console.log(`[3GP Streamer] Downloading YouTube streams for ${cacheKey}...`);
+                const ytFormat = resProfile === '144p'
+                    ? 'bestvideo[height<=144]/worstvideo/worst'
+                    : (resProfile === '240p'
+                        ? 'bestvideo[height<=240]/worstvideo/worst'
+                        : 'bestvideo[height<=380]/bestvideo[height<=360]/worstvideo/worst');
+
+                console.log(`[3GP Streamer] Downloading YouTube streams for ${cacheKey} (${ytFormat})...`);
                 await Promise.all([
                     new Promise((resolve, reject) => {
-                        const p = spawn(ytDlpPath, ['-f', 'bestvideo[height<=360]/bestvideo/worst', '-o', tmpV, videoUrl]);
+                        const p = spawn(ytDlpPath, ['-f', ytFormat, '-o', tmpV, videoUrl]);
                         p.on('close', (c) => c === 0 ? resolve() : reject(new Error(`yt-dlp video exited ${c}`)));
                         p.on('error', reject);
                     }),
@@ -475,24 +527,44 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
                     })
                 ]);
 
-                console.log(`[3GP Streamer] Transcoding to 3GP for ${cacheKey}...`);
+                console.log(`[3GP Streamer] Transcoding to 3GP (${resProfile}) for ${cacheKey}...`);
+                const ffmpegArgs = [
+                    '-y',
+                    '-i', tmpV,
+                    '-i', tmpA,
+                    '-c:v', vcodec,
+                    '-b:v', vbitrate,
+                    '-r', fps
+                ];
+                if (videoFilter) {
+                    ffmpegArgs.push('-vf', videoFilter);
+                } else if (sizeArgs) {
+                    ffmpegArgs.push(...sizeArgs);
+                }
+                ffmpegArgs.push(
+                    '-c:a', acodec,
+                    ...audioArgs,
+                    '-movflags', '+faststart',
+                    tmp3gp
+                );
+
                 await new Promise((resolve, reject) => {
-                    const ffmpeg = spawn(ffmpegPath, [
-                        '-y',
-                        '-i', tmpV,
-                        '-i', tmpA,
-                        '-c:v', 'h263',
-                        '-s', '176x144',
-                        '-r', '15',
-                        '-b:v', '128k',
-                        '-c:a', 'libopencore_amrnb',
-                        '-ar', '8000',
-                        '-ac', '1',
-                        '-b:a', '12.2k',
-                        cachedFilePath
-                    ]);
-                    ffmpeg.on('close', (c) => c === 0 ? resolve() : reject(new Error(`ffmpeg exited ${c}`)));
-                    ffmpeg.on('error', reject);
+                    const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
+                    ffmpeg.on('close', (c) => {
+                        if (c === 0) {
+                            try {
+                                fs.renameSync(tmp3gp, cachedFilePath);
+                            } catch (e) {}
+                            resolve();
+                        } else {
+                            try { fs.unlinkSync(tmp3gp); } catch (e) {}
+                            reject(new Error(`ffmpeg exited ${c}`));
+                        }
+                    });
+                    ffmpeg.on('error', (err) => {
+                        try { fs.unlinkSync(tmp3gp); } catch (e) {}
+                        reject(err);
+                    });
                 });
 
                 try { fs.unlinkSync(tmpV); } catch (e) {}
@@ -522,22 +594,28 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             return res.end('Failed to fetch remote video: ' + mediaResp.statusText);
         }
 
-        // Spawn ffmpeg to transcode to authentic Nokia 3GP (H.263 176x144, 15fps, AMR-NB 8kHz 12.2k)
-        const ffmpeg = spawn(ffmpegPath, [
+        // Spawn ffmpeg to transcode to authentic 3GP (up to 380p MPEG-4+AAC or 144p H.263+AMR)
+        const ffmpegArgs = [
             '-y',
             '-i', 'pipe:0',
-            '-c:v', 'h263',
-            '-s', '176x144',
-            '-r', '15',
-            '-b:v', '128k',
-            '-c:a', 'libopencore_amrnb',
-            '-ar', '8000',
-            '-ac', '1',
-            '-b:a', '12.2k',
+            '-c:v', vcodec,
+            '-b:v', vbitrate,
+            '-r', fps
+        ];
+        if (videoFilter) {
+            ffmpegArgs.push('-vf', videoFilter);
+        } else if (sizeArgs) {
+            ffmpegArgs.push(...sizeArgs);
+        }
+        ffmpegArgs.push(
+            '-c:a', acodec,
+            ...audioArgs,
             '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
             '-f', '3gp',
             'pipe:1'
-        ]);
+        );
+
+        const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
 
         res.writeHead(200, {
             'Content-Type': 'video/3gpp',
@@ -547,10 +625,21 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             'Access-Control-Allow-Origin': '*'
         });
 
-        const cacheWriter = fs.createWriteStream(cachedFilePath);
+        const tmp3gp = path.join(cacheDir, `${cacheKey}_tmp_${Date.now()}.3gp`);
+        const cacheWriter = fs.createWriteStream(tmp3gp);
 
         ffmpeg.stdout.pipe(res);
         ffmpeg.stdout.pipe(cacheWriter);
+
+        ffmpeg.on('close', (code) => {
+            if (code === 0) {
+                try {
+                    fs.renameSync(tmp3gp, cachedFilePath);
+                } catch (e) {}
+            } else {
+                try { fs.unlinkSync(tmp3gp); } catch (e) {}
+            }
+        });
 
         ffmpeg.stdin.on('error', () => {});
         ffmpeg.stdout.on('error', () => {});
@@ -575,6 +664,7 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
 
         req.on('close', () => {
             try { ffmpeg.kill(); } catch (e) {}
+            try { fs.unlinkSync(tmp3gp); } catch (e) {}
         });
 
     } catch (err) {
@@ -968,7 +1058,7 @@ const server = http.createServer(async (req, res) => {
             const ytDlpPath = path.join(__dirname, '..', 'tools', 'yt-dlp');
             const ytProc = spawn(ytDlpPath, [
                 '-o', '-',
-                '-f', 'bestvideo[height<=360]/worstvideo/160/133/278/18/worst',
+                '-f', 'bestvideo[height<=380]/bestvideo[height<=360]/worstvideo/160/133/278/18/worst',
                 '--no-warnings',
                 videoUrl
             ]);
@@ -1292,16 +1382,18 @@ const server = http.createServer(async (req, res) => {
             'H1:Media & Video Test',
             'P:Testing Mobile Media API (MMAPI) video playback on Nokia J2ME 240x320.',
             'H2:Featured KamTape Video',
-            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t▶ Stream 3GP: Mega Man X (Nokia)',
-            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t🎬 Launch in Nokia RealPlayer (3GP)',
+            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1&res=380p\t▶ Stream 3GP (380p HQ): Mega Man X',
+            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1&res=380p\t🎬 Launch in Nokia RealPlayer (380p 3GP)',
+            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1&res=144p\t▶ Stream 3GP (144p Classic Nokia)',
             'V:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t▶ Play Video (Stream): Mega Man X',
             'A:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t♫ Audio: Mega Man X (KamTape)',
             'L:search:kamtape\t🔍 Search KamTape Retro Videos',
             'L:https://www.kamtape.com\tBrowse All KamTape Videos',
             'HR:',
             'H2:Featured YouTube Video',
-            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU\t▶ Stream 3GP: Nokia 6300 Commercial (YouTube)',
-            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU\t🎬 Launch in Nokia RealPlayer (3GP)',
+            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU&res=380p\t▶ Stream 3GP (380p HQ): Nokia 6300 Ad',
+            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU&res=380p\t🎬 Launch in Nokia RealPlayer (380p 3GP)',
+            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU&res=144p\t▶ Stream 3GP (144p Classic Nokia)',
             'V:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU\t▶ Play Video (Stream): Nokia 6300 Ad',
             'A:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU\t♫ Audio: Nokia 6300 Ad (YouTube)',
             'L:https://www.youtube.com/watch?v=iGw5FlQXmrU\tWatch on YouTube',

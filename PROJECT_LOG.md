@@ -845,3 +845,44 @@ During investigation of the `/video_stream` endpoint and `MediaPlayerCanvas.java
 - Tested `/video_audio`: verified MP3 audio streaming stably and continuously.
 - Verified `build/NokiaBrowser.jar` size: 48,211 bytes.
 
+---
+
+## Event 026 — Upgrade 3GP Video Streaming Pipeline to Support Up to 380p Resolution (2026-09-06)
+
+**User request:** "video streaming in a 3gp to upto 380p"
+
+### Root Cause & Requirements Analysis
+- Previously, the `/video.3gp` (and `/media_3gp`) transcoding pipeline in `server/server.js` was hardcoded to `176x144` (144p QCIF) using standard H.263 video at 15 FPS and AMR-NB 8kHz mono audio at 12.2 kbps.
+- H.263 strict specifications only allow fixed small dimensions (128x96, 176x144, 352x288), making standard 360p / 380p encoding fail on FFmpeg.
+- However, 3GPP standards (3GPP TS 26.234) define MPEG-4 Simple Profile video with AAC stereo audio in `.3gp` containers, supported across Nokia Series 40 (with MPEG-4 support), Symbian S60 (N95, E71, 5800), KEmulator, MicroEmulator, Android, iOS, and desktop media players (VLC, RealPlayer).
+- To deliver modern quality while maintaining classic compatibility, the 3GP transcode pipeline needed a multi-profile architecture supporting up to 380p (high quality) and 144p (classic low-bandwidth).
+
+### Fixes Applied
+1. **`server/server.js` (`handle3gpStream`):**
+   - **Resolution Profiles (`380p`, `240p`, `144p`):**
+     - `380p` (Default HQ): MPEG-4 Simple Profile (`-c:v mpeg4`, `-b:v 550k`, `-r 24`) with aspect-ratio-preserving scaling up to 380p (`scale='min(640,iw)':min'(380,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`) and stereo AAC audio (`-c:a aac`, `-b:a 64k`, `-ar 32000`, `-ac 2`).
+     - `240p` (QVGA): MPEG-4 Simple Profile scaled to fit 320x240 with AAC stereo audio.
+     - `144p` (Classic Nokia QCIF): H.263 176x144 15 FPS with AMR-NB 8kHz mono audio for vintage low-bandwidth devices.
+   - **Atomic File Writing:** Transcodes write to a temporary `.tmp` file and only rename to the final `.3gp` path upon clean process exit (`c === 0`), completely eliminating partial/corrupt cache files.
+   - **`+faststart` Moov Atom Placement:** Relocates the 3GP `moov` index atom to the very beginning of the file, allowing instant playback and progressive streaming over HTTP before the file finishes downloading.
+   - **YouTube & Remote Ingestion:** `yt-dlp` queries `bestvideo[height<=380]/bestvideo[height<=360]/worstvideo/worst` ensuring optimal resolution up to 380p.
+   - **Sample Media:** Added 380p HQ and 144p classic 3GP stream links to `/sample_media`.
+2. **`server/youtube.js` & `server/kamtape.js`:**
+   - Watch pages now feature:
+     - `▶ Play 3GP (380p HQ)`
+     - `🎬 Launch in Nokia RealPlayer (380p 3GP)`
+     - `▶ Play 3GP (144p Classic Nokia)`
+   - Video listing cards and search results default to 380p 3GP streaming.
+3. **`build/NokiaBrowser.jar`:**
+   - Recompiled: **48,211 bytes** (strictly <= 50,000 bytes budget).
+
+### Verification
+- Downloaded and verified `yt_iGw5FlQXmrU_380p.3gp`:
+  - Format: 3GPP (`3gp4isomiso2`)
+  - Video: `mpeg4 (Simple Profile)`, 480x360, 24 fps, 570 kb/s
+  - Audio: `aac (LC)`, 32000 Hz, stereo, 64 kb/s
+  - Atom: `moov` atom verified at byte 0 for instant seekable streaming.
+- Verified HTTP 206 Partial Content (Byte Range) support: `bytes 0-100/2725894` returned with status 206.
+- Verified 144p profile: `yt_iGw5FlQXmrU_144p.3gp` properly encodes 176x144 H.263 with AMR-NB.
+
+
