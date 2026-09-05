@@ -738,3 +738,23 @@ JAR: **49,994 bytes** ✓ | Build: **SUCCESS** | SampledAudioPlayer path fully b
 | `tools/mp3/jl1.0.1.jar` | New: JLayer 1.0.1 MP3 decoder |
 | `tools/mp3/mp3spi1.9.5.jar` | New: MP3 Java Sound SPI 1.9.5.4 |
 | `tools/mp3/tritonus_share.jar` | New: Tritonus shared 0.3.7.4 |
+
+---
+
+## Event 023 — Revert YouTube Account Login & Subscriptions Feature (2026-09-06)
+
+**User request:** "undo from when you add account login in www.youtube.com function and see the youtube subscription"
+
+### What was removed
+- `server/youtube.js` — fully restored to pre-login state (404 lines). Auth engine removed: `getAuthState()`, `saveAuthState()`, `hasValidCookies()`, `saveCookiesFromRaw()`, `clearAuth()`, `DEMO_CHANNELS`, `/login`, `/logout`, `/feed/subscriptions`, `/feed/channels`, `/subscribe`, `/unsubscribe` routes all gone.
+- `server/server.js` — removed `GET /yt_login`, `POST /youtube/login`, omnibox shortcuts (`subs`, `yt login`, `yt logout`, `feed/subscriptions`, etc.), and the `handleYtWebLoginHelper` HTML page function.
+- `server/data/youtube_auth.json` — deleted.
+- `README.md` — removed "YouTube Account Sign-In & Subscriptions" section.
+
+### What was kept (bug fixes from same commits)
+- `extractVideoId` strict 11-char / no-UC validation (prevents channel IDs leaking as video IDs)
+- `searchYouTube` channel/playlist type filter (`_type !== 'channel' && _type !== 'playlist'`)
+- `/video_stream` upgraded to `bestvideo[height<=360]/worstvideo/160/133/278/18/worst` (modern DASH)
+
+### JAR
+- **49,994 bytes** ✓ (unchanged)
