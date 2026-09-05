@@ -710,3 +710,31 @@ KEmulator has two audio paths: **JLayer MP3** (via `createPlayer(InputStream,"au
 
 ### Result
 JAR: **49,994 bytes** ✓ | Build: **SUCCESS** | SampledAudioPlayer path fully bypassed for YouTube audio.
+
+---
+
+## Event 022 — Fix MicroEmulator `SampledAudioPlayer` MP3 Error (2026-09-06)
+
+### Two Issues Fixed
+
+**Issue 1: `EADDRINUSE` in test.sh**
+- `test.sh` tried to start a new gateway server even when the tmux session already had one running on port 8080.
+- Fix: Added `nc -z 127.0.0.1 8080` check before starting — skips start if port is already in use.
+
+**Issue 2: `[SampledAudioPlayer] open error: Stream of unsupported format` (×4 at startup)**
+- MicroEmulator routes ALL audio formats (including `audio/mpeg`) through its `SampledAudioPlayer` which uses Java Sound's `AudioSystem.getAudioInputStream()`.
+- Java Sound cannot decode MP3 without an mp3spi service provider plugin.
+- The 4 errors at startup are MicroEmulator's internal audio subsystem self-test probes failing.
+- Fix: Added 3 JARs to MicroEmulator classpath in `test.sh`:
+  - `tools/mp3/jl1.0.1.jar` — JLayer MP3 decoder (javazoom)
+  - `tools/mp3/mp3spi1.9.5.jar` — Java Sound MP3 SPI plugin (routes audio/mpeg to JLayer)
+  - `tools/mp3/tritonus_share.jar` — Tritonus shared utility (required by mp3spi)
+- These JARs add MP3 as a supported format to Java Sound's `AudioSystem`, so `SampledAudioPlayer.open()` succeeds for MP3 streams.
+
+### Files Changed
+| File | Change |
+|------|--------|
+| `test.sh` | Port check before gateway start; mp3spi+JLayer+tritonus in MicroEmulator classpath |
+| `tools/mp3/jl1.0.1.jar` | New: JLayer 1.0.1 MP3 decoder |
+| `tools/mp3/mp3spi1.9.5.jar` | New: MP3 Java Sound SPI 1.9.5.4 |
+| `tools/mp3/tritonus_share.jar` | New: Tritonus shared 0.3.7.4 |

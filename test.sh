@@ -13,21 +13,30 @@ if [ ! -f "build/NokiaBrowser.jad" ]; then
     ./build.sh
 fi
 
-# 2. Start Gateway Server in background
-echo "[1/2] Launching Gateway Server on port 8080..."
-node server/server.js &
-SERVER_PID=$!
+# 2. Start Gateway Server only if not already running on port 8080
+SERVER_PID=""
+if nc -z 127.0.0.1 8080 2>/dev/null; then
+    echo "[1/2] Gateway already running on port 8080 - reusing it."
+else
+    echo "[1/2] Launching Gateway Server on port 8080..."
+    node server/server.js &
+    SERVER_PID=$!
+    sleep 1
+    echo "      Gateway started (PID $SERVER_PID)"
+fi
 
-# Trap Ctrl+C or exit to kill server
+# Trap Ctrl+C or exit to kill server only if WE started it
 cleanup() {
     echo ""
-    echo "Stopping Gateway Server (PID $SERVER_PID)..."
-    kill $SERVER_PID 2>/dev/null || true
-    echo "Done."
+    if [ -n "$SERVER_PID" ]; then
+        echo "Stopping Gateway Server (PID $SERVER_PID)..."
+        kill $SERVER_PID 2>/dev/null || true
+        echo "Done."
+    else
+        echo "Gateway was pre-existing - leaving it running."
+    fi
 }
 trap cleanup EXIT INT TERM
-
-sleep 1
 
 # 3. Launch MicroEmulator in 240x320
 echo "[2/2] Launching 240x320 Nokia Emulator..."
@@ -40,8 +49,11 @@ echo "   - Key *: Fullscreen"
 echo "   - Key 1 / 7: Page Up / Page Down"
 echo ""
 
-java -cp tools/microemu-javase.jar:tools/microemu-midp.jar \
+# MP3SPI + JLayer + Tritonus = Java Sound MP3 decoder for MicroEmulator
+# Without these, SampledAudioPlayer fails with "Stream of unsupported format" for MP3
+MP3_CP="tools/mp3/jl1.0.1.jar:tools/mp3/mp3spi1.9.5.jar:tools/mp3/tritonus_share.jar"
+
+java -cp "${MP3_CP}:tools/microemu-javase.jar:tools/microemu-midp.jar" \
   org.microemu.app.Main \
   --resizableDevice 240 320 \
   build/NokiaBrowser.jad
-
