@@ -500,6 +500,56 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
     - Clean RMS initialization: 13 bookmarks saved with 0 duplicates.
     - Successfully connected to `http://127.0.0.1:8080/page?url=https://www.bing.com&img=1` with 0 exceptions.
 
+### Event 018: KEmulator (`kemnnx64`) Audio Subsystem Fix (ByteArrayInputStream & MP3 Streaming)
+- **Timestamp**: 2026-09-06T02:04:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Fix audio/sound failure in KEmulator nnmod x64 (`sound not working in kemnnx64`) for both standalone audio clips (WAV ringtones/caller tunes) and synchronized companion video audio (YouTube / KamTape).
+- **Root Cause Analysis**:
+  1. **Bytecode-Level Diagnostics from KEmulator `log.txt`**:
+     ```
+     [MEDIA] createPlayer sun.net.www.protocol.http.HttpURLConnection$HttpInputStream@1c6aa438 audio/x-wav
+     WAV realize error: java.io.IOException: mark/reset not supported
+     ```
+  2. **Decompiled KEmulator MMAPI Architecture (`PlayerImpl.class`)**:
+     - In `PlayerImpl.b(InputStream is, boolean)`:
+       ```java
+       if (is instanceof ByteArrayInputStream || Settings.enableMediaDump) {
+           byte[] data = ResourceManager.getBytes(is);
+           // ...
+           is = new ByteArrayInputStream(data);
+       }
+       AudioSystem.getAudioInputStream(is);
+       ```
+     - When audio was streamed over HTTP, `is` was an unbuffered `HttpURLConnection$HttpInputStream`.
+     - Because `EnableMediaDump` is `false` by default and `!(is instanceof ByteArrayInputStream)`, KEmulator passed the raw network stream directly into Java Sound's `AudioSystem.getAudioInputStream(is)`.
+     - Java Sound's `AudioSystem.getAudioInputStream(stream)` strictly requires `stream.markSupported() == true` to parse and rewind the WAV header. Because `HttpInputStream` does NOT support mark/reset, Java Sound immediately threw `java.io.IOException: mark/reset not supported`, aborting player realization!
+  3. **WAV vs MP3 Streaming Architecture**:
+     - In KEmulator, WAV is played exclusively via in-memory `javax.sound.sampled.Clip`. Streaming indefinite WAV over HTTP with dummy sizes (e.g. 2GB `0x7FFFFFF0`) causes `Clip` buffer allocation failures.
+     - However, KEmulator's `PlayerImpl` natively integrates **JLayer** (`emulator.javazoom.jl.player.f`) for `audio/mpeg` (MP3). JLayer decodes continuous MP3 streams frame-by-frame directly from standard `InputStream` without requiring `mark/reset` or memory `Clip` allocation.
+     - Real Nokia S40/S60 devices also have dedicated hardware DSP chips for MP3 decoding. Streaming 48 kbps MP3 drops cellular bandwidth from 32 KB/s (WAV) to 6 KB/s (an 80% reduction), eliminating cellular bottlenecking and video stutter.
+- **Architectural Changes**:
+  1. **Client Audio Engine (`MediaPlayerCanvas.java`)**:
+     - Imported `ByteArrayInputStream` and `ByteArrayOutputStream`.
+     - Added `audioConn` and `audioIs` tracking fields for clean resource disposal in `closeAudioPlayer()`.
+     - **WAV Handling**: When audio is WAV (`audio/x-wav`, `audio/wav`, or `.wav`), the client downloads the stream into a `ByteArrayOutputStream` (capped at 1.5 MB), closes the network socket, and constructs `new ByteArrayInputStream(bytes)`. This satisfies `is instanceof ByteArrayInputStream` and `markSupported() == true`, allowing KEmulator and Java Sound's `Clip` to realize and play without error.
+     - **MP3 Streaming**: When audio is MP3 (`audio/mpeg`, `audio/mp3`, or `/video_audio`), the client calls `Manager.createPlayer(audioIs, "audio/mpeg")`. KEmulator's JLayer decodes the stream continuously to the sound card.
+     - **Fallback**: Automatically falls back to `Manager.createPlayer(audioUrl)` if stream creation encounters an exception.
+     - **URL Construction (`buildAudioUrl`)**: Appends `&format=mp3` for all companion `/video_audio` streams.
+  2. **Gateway Server Dual-Format Audio (`server/server.js`)**:
+     - Upgraded `/video_audio` endpoint to accept `format=mp3` (default) or `format=wav`.
+     - For MP3: spawns `ffmpeg` with `-vn -acodec libmp3lame -b:a 48k -ar 22050 -ac 1 -f mp3 pipe:1`, serving pristine 48 kbps mono audio with `Content-Type: audio/mpeg` and disk caching (`${cacheKey}.mp3`).
+     - For WAV: retains 16kHz PCM WAV transcoding and 44-byte RIFF header injection.
+     - For static WAV files (`/static/*.wav`): serves with `Content-Type: audio/x-wav` and exact `Content-Length`.
+- **Verification**:
+  - Recompiled with `./build.sh`: 0 errors (**49,923 bytes**, strictly under the 50,000-byte ceiling).
+  - Tested Gateway Server endpoints:
+    - `curl -s -I http://127.0.0.1:8080/static/nokia_tune.wav` -> `200 OK`, `Content-Type: audio/x-wav`, `Content-Length: 105644`.
+    - `curl -s -I "http://127.0.0.1:8080/video_audio?url=...&format=mp3"` -> `200 OK`, `Content-Type: audio/mpeg`.
+  - Executed in KEmulator nnmod x64:
+    - Successfully opened and streamed YouTube video `vQ5Q0h43M4I`.
+    - `log.txt` output: `[MEDIA] createPlayer sun.net.www.protocol.http.HttpURLConnection$HttpInputStream@... audio/mpeg` with **ZERO** realize errors (`WAV realize error` completely eliminated).
+    - Audio streamed cleanly through JLayer to the host audio output.
+
 ---
 
 ## 4. Keypad Controls Reference (240x320 Nokia QVGA)
@@ -547,7 +597,7 @@ cd /home/a1/Pictures/NokiaBrowser
 - **Flags**: `-source 1.3 -target cldc1.1 -g:none -nowarn`
 - **Classpath**: `tools/cldcapi11.jar:tools/midpapi20.jar:tools/mmapi-jsr135.jar`
 - **Output Files**:
-  - `build/NokiaBrowser.jar` (48,995 bytes)
+  - `build/NokiaBrowser.jar` (49,923 bytes)
   - `build/NokiaBrowser.jad`
 
 ### Launch Gateway Server
@@ -558,7 +608,7 @@ node server/server.js
 - Endpoints:
   - `/` or `/search?q=...` -> Web browsing & Bing search
   - `/video_stream?url=...&t=...&fps=8` -> 240x180 QVGA JPEG frames
-  - `/video_audio?url=...&t=...` -> 16kHz 16-bit mono WAV audio stream
+  - `/video_audio?url=...&t=...&format=mp3` -> 48k MP3 / 16kHz WAV audio stream
   - `/video.3gp?url=...` -> Nokia 3GP transcode
   - `/image?url=...` -> 220px PNG downscaler
   - `/sample_media` -> Device showcase page

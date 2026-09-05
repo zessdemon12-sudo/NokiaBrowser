@@ -799,7 +799,7 @@ const server = http.createServer(async (req, res) => {
         const filePath = path.join(__dirname, 'public', filename);
         if (fs.existsSync(filePath)) {
             let mime = 'application/octet-stream';
-            if (filename.endsWith('.wav')) mime = 'audio/wav';
+            if (filename.endsWith('.wav')) mime = 'audio/x-wav';
             else if (filename.endsWith('.mp3')) mime = 'audio/mpeg';
             else if (filename.endsWith('.mp4')) mime = 'video/mp4';
             else if (filename.endsWith('.3gp')) mime = 'video/3gpp';
@@ -810,7 +810,8 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, {
                 'Content-Type': mime,
                 'Content-Length': stat.size,
-                'Accept-Ranges': 'bytes'
+                'Accept-Ranges': 'bytes',
+                'Access-Control-Allow-Origin': '*'
             });
             return fs.createReadStream(filePath).pipe(res);
         } else {
@@ -832,31 +833,25 @@ const server = http.createServer(async (req, res) => {
             return res.end('Missing url parameter');
         }
 
-        // Handle proxy URLs
-        if (videoUrl.includes('/media?url=')) {
-            try {
-                const u = new URL(videoUrl);
-                videoUrl = u.searchParams.get('url') || videoUrl;
-            } catch (e) {}
-        }
+        videoUrl = decodeURIComponent(videoUrl);
+        console.log(`[video_stream] Streaming from ${videoUrl} starting at ${startSec}s (${maxW}x${maxH} @ ${fps}fps)`);
 
-        // Preserve unencoded KamTape parameters if separated by query string parser
-        if (parsedUrl.searchParams.has('video_id') && !videoUrl.includes('video_id=')) {
-            videoUrl += (videoUrl.includes('?') ? '&' : '?') + 'video_id=' + parsedUrl.searchParams.get('video_id');
+        const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
+        const ffmpegArgs = ['-y'];
+        const sSec = parseFloat(startSec) || 0;
+        if (sSec > 0) {
+            ffmpegArgs.push('-ss', startSec);
         }
-        if (videoUrl.includes('kamtape.com/get_video') && !videoUrl.includes('webm=')) {
-            videoUrl += (videoUrl.includes('?') ? '&' : '?') + 'webm=1';
-        }
+        ffmpegArgs.push(
+            '-i', 'pipe:0',
+            '-vf', `scale=${maxW}:${maxH}:force_original_aspect_ratio=decrease,pad=${maxW}:${maxH}:(ow-iw)/2:(oh-ih)/2,fps=${fps}`,
+            '-q:v', '5',
+            '-f', 'image2pipe',
+            '-vcodec', 'mjpeg',
+            'pipe:1'
+        );
 
-        let streamUrl = videoUrl;
-        if (youtube.isYouTubeUrl(videoUrl)) {
-            streamUrl = await resolveDirectVideoUrl(videoUrl);
-        }
-
-        console.log(`[video_stream] Streaming frames from ${videoUrl} starting at ${startSec}s (fps=${fps}, size=${maxW}x${maxH})`);
-
-        const streamerPath = path.join(__dirname, 'video_streamer.py');
-        const child = spawn('python3', [streamerPath, streamUrl, startSec, fps, maxW, maxH]);
+        const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
 
         res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
@@ -865,51 +860,148 @@ const server = http.createServer(async (req, res) => {
             'Access-Control-Allow-Origin': '*'
         });
 
-        child.stdout.pipe(res);
+        // Write 8-byte Stream Header: Magic 'NVID' + uint16 width + uint16 height
+        const streamHdr = Buffer.alloc(8);
+        streamHdr.write('NVID', 0);
+        streamHdr.writeUInt16BE(parseInt(maxW), 4);
+        streamHdr.writeUInt16BE(parseInt(maxH), 6);
+        res.write(streamHdr);
 
-        child.stderr.on('data', (d) => console.error('[video_streamer]', d.toString().trim()));
-        req.on('close', () => {
-            try { child.kill(); } catch (e) {}
+        let imgBuffer = Buffer.alloc(0);
+        let frameCount = 0;
+
+        ffmpeg.stdout.on('data', (chunk) => {
+            imgBuffer = Buffer.concat([imgBuffer, chunk]);
+
+            while (imgBuffer.length > 0) {
+                const soi = imgBuffer.indexOf(Buffer.from([0xFF, 0xD8]));
+                if (soi === -1) {
+                    imgBuffer = Buffer.alloc(0);
+                    break;
+                }
+                if (soi > 0) {
+                    imgBuffer = imgBuffer.subarray(soi);
+                }
+
+                const eoi = imgBuffer.indexOf(Buffer.from([0xFF, 0xD9]));
+                if (eoi === -1) {
+                    break;
+                }
+
+                const frameLen = eoi + 2;
+                const frameData = imgBuffer.subarray(0, frameLen);
+                imgBuffer = imgBuffer.subarray(frameLen);
+
+                // Frame Protocol: 4 bytes length + JPEG bytes
+                const frameHeader = Buffer.alloc(4);
+                frameHeader.writeUInt32BE(frameLen, 0);
+
+                if (!res.writableEnded) {
+                    res.write(frameHeader);
+                    res.write(frameData);
+                    frameCount++;
+                }
+            }
         });
-        child.on('close', () => {
+
+        ffmpeg.stdin.on('error', () => {});
+        ffmpeg.stdout.on('error', () => {});
+        ffmpeg.stderr.on('data', (d) => {});
+
+        req.on('close', () => {
+            try { ffmpeg.kill(); } catch (e) {}
+        });
+        ffmpeg.on('close', () => {
             if (!res.writableEnded) res.end();
         });
-        return;
+
+        // Feed input to ffmpeg
+        if (youtube.isYouTubeUrl(videoUrl)) {
+            const ytDlpPath = path.join(__dirname, '..', 'tools', 'yt-dlp');
+            const ytProc = spawn(ytDlpPath, [
+                '-o', '-',
+                '-f', '18/worst[ext=mp4]/worst',
+                '--no-warnings',
+                videoUrl
+            ]);
+            ytProc.stdout.pipe(ffmpeg.stdin);
+            ytProc.on('error', (err) => console.error('[yt-dlp error]:', err.message));
+            req.on('close', () => {
+                try { ytProc.kill(); } catch (e) {}
+            });
+            return;
+        }
+
+        if (videoUrl.startsWith('http://') || videoUrl.startsWith('https://')) {
+            if (videoUrl.includes('/static/')) {
+                const staticPath = path.join(__dirname, 'public', videoUrl.substring(videoUrl.indexOf('/static/') + 8));
+                if (fs.existsSync(staticPath)) {
+                    fs.createReadStream(staticPath).pipe(ffmpeg.stdin);
+                    return;
+                }
+            }
+
+            fetch(videoUrl, {
+                headers: { 'User-Agent': USER_AGENT }
+            }).then(resp => {
+                if (!resp.ok) {
+                    try { ffmpeg.kill(); } catch (e) {}
+                    if (!res.headersSent) {
+                        res.writeHead(502, { 'Content-Type': 'text/plain' });
+                        res.end('Remote video fetch failed');
+                    }
+                    return;
+                }
+                const reader = resp.body.getReader();
+                (async () => {
+                    try {
+                        while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            if (!ffmpeg.stdin.destroyed && ffmpeg.stdin.writable) {
+                                ffmpeg.stdin.write(Buffer.from(value));
+                            }
+                        }
+                    } catch (e) {
+                    } finally {
+                        try { ffmpeg.stdin.end(); } catch (e) {}
+                    }
+                })();
+            }).catch(err => {
+                try { ffmpeg.kill(); } catch (e) {}
+                if (!res.headersSent) {
+                    res.writeHead(500, { 'Content-Type': 'text/plain' });
+                    res.end('Proxy streaming error: ' + err.message);
+                }
+            });
+            return;
+        }
+
+        // Local video file
+        if (fs.existsSync(videoUrl)) {
+            fs.createReadStream(videoUrl).pipe(ffmpeg.stdin);
+            return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        return res.end('Video resource not found');
     }
 
-    // Video Audio Streamer Engine (16kHz 16-bit Mono WAV for J2ME MMAPI)
+    // Synchronized Audio Streamer for Video Player (48k MP3 or 16kHz WAV)
     if (pathname === '/video_audio') {
         let videoUrl = parsedUrl.searchParams.get('url');
         const startSec = parsedUrl.searchParams.get('t') || '0';
+        const format = (parsedUrl.searchParams.get('format') || 'mp3').toLowerCase();
+        const isMp3 = (format === 'mp3');
+        const contentType = isMp3 ? 'audio/mpeg' : 'audio/x-wav';
+        const ext = isMp3 ? 'mp3' : 'wav';
 
         if (!videoUrl) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             return res.end('Missing url parameter');
         }
 
-        // Handle proxy URLs
-        if (videoUrl.includes('/media?url=')) {
-            try {
-                const u = new URL(videoUrl);
-                videoUrl = u.searchParams.get('url') || videoUrl;
-            } catch (e) {}
-        }
-        if (videoUrl.includes('/video.3gp?url=')) {
-            try {
-                const u = new URL(videoUrl);
-                videoUrl = u.searchParams.get('url') || videoUrl;
-            } catch (e) {}
-        }
-
-        // Preserve unencoded KamTape parameters if separated by query parser
-        if (parsedUrl.searchParams.has('video_id') && !videoUrl.includes('video_id=')) {
-            videoUrl += (videoUrl.includes('?') ? '&' : '?') + 'video_id=' + parsedUrl.searchParams.get('video_id');
-        }
-        if (videoUrl.includes('kamtape.com/get_video') && !videoUrl.includes('webm=')) {
-            videoUrl += (videoUrl.includes('?') ? '&' : '?') + 'webm=1';
-        }
-
-        console.log(`[video_audio] Streaming audio from ${videoUrl} starting at ${startSec}s`);
+        videoUrl = decodeURIComponent(videoUrl);
 
         let cacheKey = null;
         if (youtube.isYouTubeUrl(videoUrl)) {
@@ -929,37 +1021,12 @@ const server = http.createServer(async (req, res) => {
         if (!fs.existsSync(cacheDir)) {
             fs.mkdirSync(cacheDir, { recursive: true });
         }
-        const cachedFilePath = path.join(cacheDir, `${cacheKey}.wav`);
+        const cachedFilePath = path.join(cacheDir, `${cacheKey}.${ext}`);
         const sSec = parseFloat(startSec) || 0;
-
-        // If cached WAV already exists and is complete (> 1000 bytes)
-        if (fs.existsSync(cachedFilePath) && fs.statSync(cachedFilePath).size > 1000) {
-            const stat = fs.statSync(cachedFilePath);
-            const totalFileSize = stat.size;
-            const byteOffset = 44 + Math.floor(sSec * 32000);
-
-            if (byteOffset < totalFileSize) {
-                const remainingData = totalFileSize - byteOffset;
-                res.writeHead(200, {
-                    'Content-Type': 'audio/x-wav',
-                    'Content-Length': (44 + remainingData).toString(),
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'close',
-                    'Access-Control-Allow-Origin': '*'
-                });
-
-                // Fresh 44-byte WAV header with exact remaining size
-                const wavHdr = makeWavHeader(16000, 1, 16, remainingData);
-                res.write(wavHdr);
-                const readStream = fs.createReadStream(cachedFilePath, { start: byteOffset });
-                readStream.pipe(res);
-                return;
-            }
-        }
 
         if (req.method === 'HEAD') {
             res.writeHead(200, {
-                'Content-Type': 'audio/x-wav',
+                'Content-Type': contentType,
                 'Cache-Control': 'no-cache',
                 'Connection': 'close',
                 'Access-Control-Allow-Origin': '*'
@@ -967,41 +1034,96 @@ const server = http.createServer(async (req, res) => {
             return res.end();
         }
 
+        // If cached audio already exists and is complete (> 1000 bytes)
+        if (fs.existsSync(cachedFilePath) && fs.statSync(cachedFilePath).size > 1000) {
+            const stat = fs.statSync(cachedFilePath);
+            const totalFileSize = stat.size;
+
+            if (isMp3) {
+                res.writeHead(200, {
+                    'Content-Type': 'audio/mpeg',
+                    'Content-Length': totalFileSize.toString(),
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'close',
+                    'Access-Control-Allow-Origin': '*'
+                });
+                return fs.createReadStream(cachedFilePath).pipe(res);
+            } else {
+                const byteOffset = 44 + Math.floor(sSec * 32000);
+                if (byteOffset < totalFileSize) {
+                    const remainingData = totalFileSize - byteOffset;
+                    res.writeHead(200, {
+                        'Content-Type': 'audio/x-wav',
+                        'Content-Length': (44 + remainingData).toString(),
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'close',
+                        'Access-Control-Allow-Origin': '*'
+                    });
+                    const wavHdr = makeWavHeader(16000, 1, 16, remainingData);
+                    res.write(wavHdr);
+                    return fs.createReadStream(cachedFilePath, { start: byteOffset }).pipe(res);
+                }
+            }
+        }
+
+        console.log(`[video_audio] Streaming ${format.toUpperCase()} audio from ${videoUrl} starting at ${startSec}s`);
+
         // Transcode audio on the fly with FFmpeg
         const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
         const ffmpegArgs = ['-y'];
         if (sSec > 0) {
             ffmpegArgs.push('-ss', startSec);
         }
-        ffmpegArgs.push(
-            '-i', 'pipe:0',
-            '-vn',
-            '-acodec', 'pcm_s16le',
-            '-ar', '16000',
-            '-ac', '1',
-            '-f', 's16le',
-            'pipe:1'
-        );
+
+        if (isMp3) {
+            ffmpegArgs.push(
+                '-i', 'pipe:0',
+                '-vn',
+                '-acodec', 'libmp3lame',
+                '-b:a', '48k',
+                '-ar', '22050',
+                '-ac', '1',
+                '-f', 'mp3',
+                'pipe:1'
+            );
+        } else {
+            ffmpegArgs.push(
+                '-i', 'pipe:0',
+                '-vn',
+                '-acodec', 'pcm_s16le',
+                '-ar', '16000',
+                '-ac', '1',
+                '-f', 's16le',
+                'pipe:1'
+            );
+        }
 
         const ffmpeg = spawn(ffmpegPath, ffmpegArgs);
 
         res.writeHead(200, {
-            'Content-Type': 'audio/x-wav',
+            'Content-Type': contentType,
             'Cache-Control': 'no-cache',
             'Connection': 'close',
             'Access-Control-Allow-Origin': '*'
         });
 
-        // 44-byte streaming WAV header
-        const wavHdr = makeWavHeader(16000, 1, 16, 0x7FFFFFF0);
-        res.write(wavHdr);
+        let cacheWriter = null;
+        if (!isMp3) {
+            // 44-byte streaming WAV header
+            const wavHdr = makeWavHeader(16000, 1, 16, 0x7FFFFFF0);
+            res.write(wavHdr);
+            if (sSec === 0) {
+                cacheWriter = fs.createWriteStream(cachedFilePath);
+                cacheWriter.write(wavHdr);
+            }
+        } else {
+            if (sSec === 0) {
+                cacheWriter = fs.createWriteStream(cachedFilePath);
+            }
+        }
 
         ffmpeg.stdout.pipe(res);
-
-        let cacheWriter = null;
-        if (sSec === 0) {
-            cacheWriter = fs.createWriteStream(cachedFilePath);
-            cacheWriter.write(wavHdr);
+        if (cacheWriter) {
             ffmpeg.stdout.pipe(cacheWriter);
         }
 

@@ -17,6 +17,8 @@ import javax.microedition.media.Player;
 import javax.microedition.media.PlayerListener;
 import javax.microedition.media.control.VideoControl;
 import javax.microedition.media.control.VolumeControl;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.DataInputStream;
 import java.io.InputStream;
 
@@ -61,6 +63,8 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
 
     private HttpConnection streamConn;
     private DataInputStream streamDis;
+    private HttpConnection audioConn;
+    private InputStream audioIs;
     private String gatewayUrl;
 
     private Font fontSmallBold;
@@ -165,27 +169,73 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     /**
      * Synchronized Audio Player:
      * Plays companion audio stream (/video_audio) for video, or standalone audio.
-     * Universal across MicroEmulator (PC) and real Nokia J2ME MMAPI devices.
+     * Universal across KEmulator (nnmod x64), MicroEmulator, and real Nokia J2ME MMAPI devices.
      */
     private void runAudioPlayer(long startSec) {
         closeAudioPlayer();
         String audioUrl = buildAudioUrl(mediaUrl, startSec);
         try {
-            // 1. Try URL locator with Manager.createPlayer
-            try {
-                player = Manager.createPlayer(audioUrl);
-            } catch (Throwable t) {
-                player = null;
+            if (audioUrl.startsWith("http://") || audioUrl.startsWith("https://")) {
+                try {
+                    audioConn = (HttpConnection) Connector.open(audioUrl, Connector.READ, true);
+                    audioConn.setRequestMethod(HttpConnection.GET);
+                    if (simManager != null) {
+                        audioConn.setRequestProperty("User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");
+                    } else {
+                        audioConn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
+                    }
+                    String ctype = audioConn.getType();
+                    if (ctype != null) {
+                        ctype = ctype.toLowerCase();
+                    }
+                    audioIs = audioConn.openInputStream();
+
+                    // 1. WAV handling: KEmulator & Java Sound Clip require ByteArrayInputStream
+                    // to avoid 'IOException: mark/reset not supported'
+                    if ((ctype != null && ctype.indexOf("wav") >= 0) || audioUrl.indexOf(".wav") >= 0) {
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        byte[] buf = new byte[2048];
+                        int r;
+                        while ((r = audioIs.read(buf)) != -1) {
+                            baos.write(buf, 0, r);
+                            if (simManager != null) {
+                                simManager.recordBytes(r);
+                            }
+                            if (baos.size() > 1500000) break; // 1.5MB max for WAV in RAM
+                        }
+                        try { audioIs.close(); } catch (Throwable t) {}
+                        try { audioConn.close(); } catch (Throwable t) {}
+                        audioIs = null;
+                        audioConn = null;
+
+                        ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+                        player = Manager.createPlayer(bais, "audio/x-wav");
+                    }
+                    // 2. MP3 streaming: KEmulator JLayer & Nokia hardware decode live MP3 stream
+                    else if ((ctype != null && (ctype.indexOf("mpeg") >= 0 || ctype.indexOf("mp3") >= 0)) || audioUrl.indexOf(".mp3") >= 0) {
+                        try {
+                            player = Manager.createPlayer(audioIs, "audio/mpeg");
+                        } catch (Throwable t) {
+                            player = null;
+                        }
+                    }
+                    // 3. Other formats (AMR, etc.)
+                    else {
+                        try {
+                            player = Manager.createPlayer(audioIs, (ctype != null) ? ctype : "audio/mpeg");
+                        } catch (Throwable t) {
+                            player = null;
+                        }
+                    }
+                } catch (Throwable t) {
+                    player = null;
+                }
             }
 
-            // 2. Fallback: Open HttpConnection stream for Nokia MMAPI
-            if (player == null && (audioUrl.startsWith("http://") || audioUrl.startsWith("https://"))) {
+            // Fallback: URL locator
+            if (player == null) {
                 try {
-                    HttpConnection conn = (HttpConnection) Connector.open(audioUrl, Connector.READ, true);
-                    conn.setRequestMethod(HttpConnection.GET);
-                    conn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
-                    InputStream is = conn.openInputStream();
-                    player = Manager.createPlayer(is, "audio/x-wav");
+                    player = Manager.createPlayer(audioUrl);
                 } catch (Throwable t) {
                     player = null;
                 }
@@ -193,7 +243,9 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
 
             if (player != null) {
                 player.addPlayerListener(this);
-                player.realize();
+                try {
+                    player.realize();
+                } catch (Throwable t) {}
 
                 try {
                     volumeControl = (VolumeControl) player.getControl("VolumeControl");
@@ -202,7 +254,10 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                     }
                 } catch (Throwable t) {}
 
-                player.prefetch();
+                try {
+                    player.prefetch();
+                } catch (Throwable t) {}
+
                 if (durationUs <= 0) {
                     long dur = player.getDuration();
                     if (dur > 0) durationUs = dur;
@@ -232,6 +287,14 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                 player.close();
             } catch (Throwable t) {}
             player = null;
+        }
+        if (audioIs != null) {
+            try { audioIs.close(); } catch (Throwable t) {}
+            audioIs = null;
+        }
+        if (audioConn != null) {
+            try { audioConn.close(); } catch (Throwable t) {}
+            audioConn = null;
         }
         volumeControl = null;
     }
@@ -374,7 +437,11 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
             base = gatewayUrl + "/video_audio?url=" + rawUrl;
         }
         char sep = (base.indexOf('?') >= 0) ? '&' : '?';
-        return base + sep + "t=" + startSec;
+        String res = base + sep + "t=" + startSec;
+        if (base.indexOf("/video_audio") >= 0 && base.indexOf("format=") < 0) {
+            res += "&format=mp3";
+        }
+        return res;
     }
 
     private static String replaceString(String source, String target, String replacement) {
