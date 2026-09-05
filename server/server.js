@@ -1189,9 +1189,25 @@ const server = http.createServer(async (req, res) => {
                 const q = targetUrl.replace(/^search:?(\s*frogfind)?\s*/i, '').trim();
                 const frogUrl = q ? ('https://www.frogfind.com/?q=' + encodeURIComponent(q)) : 'https://www.frogfind.com';
                 return frogfind.handleFrogFindPage(frogUrl, res, gatewayHost, decodeHtmlEntities, parseAndReflowHtml, formatPagePayload);
+            } else if (targetUrl.startsWith('search:robi') || targetUrl.startsWith('search robi')) {
+                targetUrl = 'http://wap.robi.com.bd';
+            } else if (targetUrl === 'robi' || targetUrl.startsWith('robi/') ||
+                       targetUrl === 'robi-internet' || targetUrl.startsWith('robi-internet/') ||
+                       targetUrl === 'robi-inernet' || targetUrl.startsWith('robi-inernet/') ||
+                       targetUrl === 'robi internet' || targetUrl.startsWith('robi internet/') ||
+                       targetUrl === 'wap.robi.com.bd' || targetUrl.startsWith('wap.robi.com.bd/') ||
+                       targetUrl === 'robi.com.bd' || targetUrl.startsWith('robi.com.bd/')) {
+                const sub = targetUrl.includes('/') ? targetUrl.substring(targetUrl.indexOf('/')) : '';
+                targetUrl = 'http://wap.robi.com.bd' + sub;
             } else {
                 targetUrl = 'https://' + targetUrl;
             }
+        }
+
+        // Special Robi-INTERNET mobile WAP portal integration (Robi Axiata)
+        if (targetUrl.includes('wap.robi.com.bd') || targetUrl.includes('robi.com.bd') ||
+            targetUrl.includes('robi-internet') || targetUrl.includes('robi-inernet')) {
+            return handleRobiPortalRequest(targetUrl, req, res, gatewayHost);
         }
 
         // Special FrogFind search & reader proxy integration
@@ -1327,6 +1343,151 @@ async function handleKamTapeRequest(targetUrl, res, gatewayHost) {
     }
 }
 
+function handleRobiPortalRequest(targetUrl, req, res, gatewayHost) {
+    const sim = req.headers['x-nokia-sim'] || 'SIM 1';
+    const bearer = req.headers['x-nokia-bearer'] || 'EDGE (2.5G)';
+    const operator = req.headers['x-nokia-operator'] || 'Robi Axiata';
+    const apn = req.headers['x-nokia-apn'] || 'INTERNET';
+    const signal = req.headers['x-nokia-signal'] || '4/4';
+
+    let title = 'Robi-INTERNET WAP Portal';
+    const lines = [];
+
+    // Parse sub-path if any
+    let path = '';
+    try {
+        const u = new URL(targetUrl);
+        path = u.pathname;
+    } catch (e) {
+        path = '/';
+    }
+
+    if (path.startsWith('/packs/daily')) {
+        title = 'Robi 1 Day Social Pack';
+        lines.push('META:TITLE=' + title);
+        lines.push('META:URL=' + targetUrl);
+        lines.push('META:HTTPS=0');
+        lines.push('H1:Robi 1 Day Social Pack');
+        lines.push('P:Volume: 50 MB High Speed Internet');
+        lines.push('P:Price: ৳9 (Inclusive of SD, VAT & SC)');
+        lines.push('P:Validity: 24 Hours from activation');
+        lines.push('P:Dial Code: *123*050#');
+        lines.push('P:Network: 2G / 3G / 3.5G HSDPA');
+        lines.push('HR:');
+        lines.push('L:http://wap.robi.com.bd/packs\t<< Back to Internet Packs');
+        lines.push('L:http://wap.robi.com.bd\t<< Robi Home');
+    } else if (path.startsWith('/packs/weekly')) {
+        title = 'Robi 7 Days Unlimited Pack';
+        lines.push('META:TITLE=' + title);
+        lines.push('META:URL=' + targetUrl);
+        lines.push('META:HTTPS=0');
+        lines.push('H1:Robi 7 Days Unlimited Pack');
+        lines.push('P:Volume: 1 GB Data + 250 MB 3G Bonus');
+        lines.push('P:Price: ৳49 (All Inclusive)');
+        lines.push('P:Validity: 7 Calendar Days');
+        lines.push('P:Dial Code: *123*049#');
+        lines.push('P:APN Profile: Robi-INTERNET (INTERNET)');
+        lines.push('HR:');
+        lines.push('L:http://wap.robi.com.bd/packs\t<< Back to Internet Packs');
+        lines.push('L:http://wap.robi.com.bd\t<< Robi Home');
+    } else if (path.startsWith('/packs/monthly')) {
+        title = 'Robi 30 Days Power Net';
+        lines.push('META:TITLE=' + title);
+        lines.push('META:URL=' + targetUrl);
+        lines.push('META:HTTPS=0');
+        lines.push('H1:Robi 30 Days Power Net');
+        lines.push('P:Volume: 5 GB High Speed Data');
+        lines.push('P:Price: ৳199 (All Inclusive)');
+        lines.push('P:Validity: 30 Calendar Days');
+        lines.push('P:Dial Code: *123*199#');
+        lines.push('P:Auto-renewal: Available (*123*199*1#)');
+        lines.push('HR:');
+        lines.push('L:http://wap.robi.com.bd/packs\t<< Back to Internet Packs');
+        lines.push('L:http://wap.robi.com.bd\t<< Robi Home');
+    } else if (path.startsWith('/packs')) {
+        title = 'Robi Internet & Data Packs';
+        lines.push('META:TITLE=' + title);
+        lines.push('META:URL=' + targetUrl);
+        lines.push('META:HTTPS=0');
+        lines.push('H1:Robi Internet & Data Packs');
+        lines.push('P:Choose an internet package for your Nokia device:');
+        lines.push('L:http://wap.robi.com.bd/packs/daily\t1. 1 Day Social Pack (50 MB - ৳9)');
+        lines.push('L:http://wap.robi.com.bd/packs/weekly\t2. 7 Days Unlimited Pack (1 GB - ৳49)');
+        lines.push('L:http://wap.robi.com.bd/packs/monthly\t3. 30 Days Power Net (5 GB - ৳199)');
+        lines.push('L:http://wap.robi.com.bd/account\t4. Check Balance & Data MB (*222# / *3#)');
+        lines.push('HR:');
+        lines.push('L:http://wap.robi.com.bd\t<< Robi Home');
+    } else if (path.startsWith('/account')) {
+        title = 'Robi Account & Balance Services';
+        lines.push('META:TITLE=' + title);
+        lines.push('META:URL=' + targetUrl);
+        lines.push('META:HTTPS=0');
+        lines.push('H1:Robi Account Services');
+        lines.push('P:Main Balance: ৳ 48.75 (Valid until 31/12/2026)');
+        lines.push('P:Mobile Data: 850 MB remaining on Robi-INTERNET');
+        lines.push('P:Emergency Balance: Eligible for up to ৳30 (*123*007#)');
+        lines.push('P:Active Profile: ' + apn + ' (Proxy: 10.16.18.77:8080)');
+        lines.push('P:SIM Status: ' + sim + ' connected to ' + operator);
+        lines.push('HR:');
+        lines.push('H2:USSD Quick Codes');
+        lines.push('LI:Check Balance: *222#');
+        lines.push('LI:Check Internet MB: *3#');
+        lines.push('LI:Check Minute Balance: *222*2#');
+        lines.push('LI:Know My Number: *140*2*4#');
+        lines.push('LI:Jhotpot Emergency: *123*007#');
+        lines.push('HR:');
+        lines.push('L:http://wap.robi.com.bd\t<< Robi Home');
+    } else {
+        // Main Robi WAP Portal
+        lines.push('META:TITLE=Robi-INTERNET WAP Portal');
+        lines.push('META:URL=http://wap.robi.com.bd');
+        lines.push('META:HTTPS=0');
+        lines.push('H1:Robi WAP Portal (BD)');
+        lines.push('P:Welcome to Robi Axiata WAP mobile services on Nokia J2ME.');
+        lines.push('P:📶 Network: ' + operator + ' [' + bearer + '] | Signal: ' + signal);
+        lines.push('P:📡 Cellular APN: ' + apn + ' (Proxy: 10.16.18.77:8080)');
+        lines.push('HR:');
+        lines.push('H2:Robi Internet Packs');
+        lines.push('L:http://wap.robi.com.bd/packs/daily\t• 1 Day Social Pack (50 MB - ৳9)');
+        lines.push('L:http://wap.robi.com.bd/packs/weekly\t• 7 Days Unlimited Pack (1 GB - ৳49)');
+        lines.push('L:http://wap.robi.com.bd/packs/monthly\t• 30 Days Power Net (5 GB - ৳199)');
+        lines.push('L:http://wap.robi.com.bd/packs\t• View All Internet Packages...');
+        lines.push('HR:');
+        lines.push('H2:Account & USSD Services');
+        lines.push('L:http://wap.robi.com.bd/account\t• Check Balance & Internet MB (*222# / *3#)');
+        lines.push('P:Emergency Balance: Dial *123*007# (৳10-৳30)');
+        lines.push('P:My Robi Number: Dial *140*2*4#');
+        lines.push('HR:');
+        lines.push('H2:WAP Media & Entertainment');
+        lines.push('A:http://' + gatewayHost + '/static/nokia_tune.wav\t♫ Robi GoonGoon Caller Tune (WAV)');
+        lines.push('V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU\t▶ Robi 3.5G Mobile TV (3GP Stream)');
+        lines.push('L:search:youtube\t🔍 Search YouTube Videos');
+        lines.push('L:search:kamtape\t🔍 Search KamTape Retro Clips');
+        lines.push('HR:');
+        lines.push('H2:Robi-INTERNET APN Settings');
+        lines.push('P:• Profile Name: Robi-INTERNET');
+        lines.push('P:• APN: INTERNET');
+        lines.push('P:• WAP Gateway: 10.16.18.77');
+        lines.push('P:• Port: 8080');
+        lines.push('P:• MCC: 470, MNC: 02 (Bangladesh)');
+        lines.push('HR:');
+        lines.push('H2:Popular Web Links');
+        lines.push('L:https://www.bing.com\tBing Search');
+        lines.push('L:https://www.frogfind.com\tFrogFind! Search');
+        lines.push('L:https://en.wikipedia.org\tWikipedia Mobile');
+        lines.push('L:https://news.ycombinator.com\tHacker News');
+        lines.push('L:https://www.bbc.com/news\tBBC News');
+    }
+
+    const payload = lines.join('\n');
+    res.writeHead(200, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'X-Nokia-Robi-Portal': '1'
+    });
+    res.end(payload);
+}
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`====================================================`);
     console.log(` Nokia J2ME Modern Gateway Server running on port ${PORT}`);
@@ -1340,5 +1501,6 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(` Video Audio Streaming: /video_audio Enabled`);
     console.log(` Media Streaming (Audio/Video): Enabled`);
     console.log(` Sample Media Showcase: http://localhost:${PORT}/sample_media`);
+    console.log(` Robi-INTERNET WAP Portal: http://wap.robi.com.bd (via Gateway)`);
     console.log(`====================================================`);
 });

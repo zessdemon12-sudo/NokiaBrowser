@@ -364,6 +364,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
 
         choiceApn = new ChoiceGroup("Carrier APN Profile:", ChoiceGroup.EXCLUSIVE);
         choiceApn.append("Auto (Default Internet)", null);
+        choiceApn.append("Robi-INTERNET (BD)", null);
         choiceApn.append("Vodafone (live.vodafone.com)", null);
         choiceApn.append("T-Mobile (fast.t-mobile.com)", null);
         choiceApn.append("AT&T (phone)", null);
@@ -492,6 +493,20 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         int sp = norm.indexOf(' ');
                         String q = norm.substring(sp + 1).trim();
                         loadUrl("https://www.frogfind.com/?q=" + com.nokia.browser.net.NetworkManager.urlEncode(q), true);
+                        return;
+                    }
+
+                    // 4. Robi routing (Robi-INTERNET)
+                    if (norm.equals("robi") || norm.equals("robi-internet") || norm.equals("robi-inernet") ||
+                        norm.equals("robi internet") || norm.equals("wap.robi.com.bd") || norm.equals("wap.robi.com.bd/") ||
+                        norm.equals("robi.com.bd") || norm.equals("robi.com.bd/")) {
+                        storage.setApnPreset(com.nokia.browser.net.SimManager.APN_ROBI);
+                        loadUrl("http://wap.robi.com.bd", true);
+                        return;
+                    }
+                    if (norm.startsWith("robi ") || norm.startsWith("robi-internet ") || norm.startsWith("robi-inernet ")) {
+                        storage.setApnPreset(com.nokia.browser.net.SimManager.APN_ROBI);
+                        loadUrl("http://wap.robi.com.bd", true);
                         return;
                     }
                     if (lower.startsWith("search ") || lower.startsWith("? ")) {

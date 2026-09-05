@@ -22,13 +22,14 @@ public class SimManager {
 
     // Carrier APN Presets
     public static final int APN_AUTO     = 0;
-    public static final int APN_VODAFONE = 1;
-    public static final int APN_TMOBILE  = 2;
-    public static final int APN_ATT      = 3;
-    public static final int APN_AIRTEL   = 4;
-    public static final int APN_JIO      = 5;
-    public static final int APN_ORANGE   = 6;
-    public static final int APN_CUSTOM   = 7;
+    public static final int APN_ROBI     = 1;
+    public static final int APN_VODAFONE = 2;
+    public static final int APN_TMOBILE  = 3;
+    public static final int APN_ATT      = 4;
+    public static final int APN_AIRTEL   = 5;
+    public static final int APN_JIO      = 6;
+    public static final int APN_ORANGE   = 7;
+    public static final int APN_CUSTOM   = 8;
 
     private StorageManager storage;
 
@@ -101,6 +102,11 @@ public class SimManager {
                 isRoaming = true;
             }
         } catch (Throwable t) {}
+
+        // Carrier operator detection
+        if ("470".equals(detectedCountryCode) && ("02".equals(detectedNetworkCode) || "2".equals(detectedNetworkCode))) {
+            detectedOperator = "Robi Axiata";
+        }
     }
 
     public int getActiveSim() {
@@ -130,6 +136,7 @@ public class SimManager {
     public String getApnName() {
         int preset = storage.getApnPreset();
         switch (preset) {
+            case APN_ROBI:     return "INTERNET";
             case APN_VODAFONE: return "live.vodafone.com";
             case APN_TMOBILE:  return "fast.t-mobile.com";
             case APN_ATT:      return "phone";
@@ -148,6 +155,7 @@ public class SimManager {
     public String getApnProxy() {
         int preset = storage.getApnPreset();
         switch (preset) {
+            case APN_ROBI:     return "10.16.18.77:8080";
             case APN_VODAFONE: return "10.10.1.100:8080";
             case APN_ORANGE:   return "192.168.10.100:8080";
             case APN_CUSTOM:

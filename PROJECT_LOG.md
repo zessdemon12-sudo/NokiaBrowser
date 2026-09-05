@@ -437,6 +437,40 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
   - Verified server gateway parses cellular headers: `[Cellular: SIM 1 | EDGE | Vodafone UK | live.vodafone.com | Saver: ON | Sig: 4/4]`.
   - Verified MicroEmulator loads `build/NokiaBrowser.jad` and runs cleanly.
 
+### Event 016: Robi-INTERNET Cellular APN, Omnibox Routing & Retro WAP Portal (Robi Axiata BD)
+- **Timestamp**: 2026-09-06T01:32:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Add native support for the authentic Robi-INTERNET APN profile (Robi Axiata Limited, Bangladesh, MCC 470, MNC 02), omnibox shortcuts, default bookmark, and reflowed retro WAP mobile portal on the gateway.
+- **Architectural Changes**:
+  1. **Cellular Engine (`SimManager.java`)**:
+     - Added `public static final int APN_ROBI = 1` preset (renumbered Vodafone to 2, T-Mobile to 3, etc.).
+     - In `getApnName()`: returns `"INTERNET"` for `APN_ROBI`.
+     - In `getApnProxy()`: returns `"10.16.18.77:8080"` for `APN_ROBI`.
+     - In `detectHardware()`: auto-detects MCC `470` and MNC `02`/`2` mapping to operator `"Robi Axiata"`.
+  2. **Menus, Settings & Omnibox Routing (`BrowserMIDlet.java`)**:
+     - Added `"Robi-INTERNET (BD)"` to the APN Profile ChoiceGroup in `showSimNetworkSettings()`.
+     - Added omnibox keyword triggers for `robi`, `robi-internet`, `robi-inernet`, `robi internet`, `wap.robi.com.bd`, `robi.com.bd`:
+       - Automatically sets active APN preset to `APN_ROBI` (`Robi-INTERNET`).
+       - Directly loads `http://wap.robi.com.bd`.
+  3. **Bookmarks Storage & Migration (`StorageManager.java`)**:
+     - Added `"Robi Portal (Robi-INTERNET)"` -> `http://wap.robi.com.bd` to default bookmarks.
+     - Added migration verification for existing RMS installations so the Robi bookmark is always available.
+  4. **Retro Robi WAP 2.0 Mobile Portal (`server/server.js`)**:
+     - Added `handleRobiPortalRequest` and route normalizer for `wap.robi.com.bd`, `robi.com.bd`, and `robi` requests.
+     - Serves authentic retro WAP 2.0 reflowed mobile portal:
+       - Real-time cellular telemetry: displays operator, active bearer, signal meter, and APN (`INTERNET` | `10.16.18.77:8080`).
+       - Internet Packages: 1 Day Social Pack (`*123*050#`), 7 Days Unlimited Pack (`*123*049#`), 30 Days Power Net (`*123*199#`).
+       - Account & USSD Services: Check Balance (`*222#`), Check Data MB (`*3#`), Emergency Balance (`*123*007#`), My Number (`*140*2*4#`).
+       - WAP Media: Robi GoonGoon Caller Tune (WAV audio streaming), 3.5G Mobile TV (3GP video streaming).
+       - APN Configuration Specs: MCC 470, MNC 02, APN `INTERNET`, Gateway `10.16.18.77:8080`.
+  5. **Footprint & Binary Size**:
+     - Compiled client JAR size: **48,995 bytes** (~47.8 KB), strictly below the 50 KB ceiling (1,005 bytes headroom).
+- **Verification**:
+  - Compiled with Eclipse ECJ targeting CLDC 1.1 / MIDP 2.0: 0 errors.
+  - Tested Gateway HTTP endpoint `http://localhost:8080/page?url=robi` and sub-paths `/packs/daily`, `/account`.
+  - Tested custom cellular headers (`X-Nokia-SIM`, `X-Nokia-Bearer`, `X-Nokia-Operator`, `X-Nokia-APN`, `X-Nokia-Signal`).
+  - Tested MicroEmulator launch loading `build/NokiaBrowser.jad` with 0 exceptions.
+
 ---
 
 ## 4. Keypad Controls Reference (240x320 Nokia QVGA)
@@ -484,7 +518,7 @@ cd /home/a1/Pictures/NokiaBrowser
 - **Flags**: `-source 1.3 -target cldc1.1 -g:none -nowarn`
 - **Classpath**: `tools/cldcapi11.jar:tools/midpapi20.jar:tools/mmapi-jsr135.jar`
 - **Output Files**:
-  - `build/NokiaBrowser.jar` (48,591 bytes)
+  - `build/NokiaBrowser.jar` (48,995 bytes)
   - `build/NokiaBrowser.jad`
 
 ### Launch Gateway Server

@@ -267,6 +267,7 @@ public class StorageManager {
             rs = RecordStore.openRecordStore(RS_BOOKMARKS, true);
             if (rs.getNumRecords() == 0) {
                 // Populate default bookmarks
+                addBookmark("Robi Portal (Robi-INTERNET)", "http://wap.robi.com.bd");
                 addBookmark("YouTube Video Search", "search:youtube");
                 addBookmark("Search https://www.youtube.com/", "https://www.youtube.com/search");
                 addBookmark("YouTube Videos", "https://www.youtube.com");
@@ -283,6 +284,7 @@ public class StorageManager {
                 boolean hasFrogFind = false;
                 boolean hasKamTape = false;
                 boolean hasYouTube = false;
+                boolean hasRobi = false;
                 RecordEnumeration re = rs.enumerateRecords(null, null, false);
                 while (re.hasNextElement()) {
                     byte[] data = re.nextRecord();
@@ -302,9 +304,15 @@ public class StorageManager {
                         if (bUrl.indexOf("youtube") >= 0) {
                             hasYouTube = true;
                         }
+                        if (bUrl.indexOf("robi") >= 0) {
+                            hasRobi = true;
+                        }
                     }
                 }
                 re.destroy();
+                if (!hasRobi) {
+                    addBookmark("Robi Portal (Robi-INTERNET)", "http://wap.robi.com.bd");
+                }
                 if (!hasFrogFind) {
                     addBookmark("FrogFind! (Retro Search)", "https://www.frogfind.com");
                 }
