@@ -261,30 +261,35 @@ public class StorageManager {
         }
     }
 
+    private void addBookmarkMemory(String title, String url) {
+        if (url != null && !bookmarkUrls.contains(url)) {
+            bookmarkTitles.addElement(title);
+            bookmarkUrls.addElement(url);
+        }
+    }
+
     private void loadBookmarks() {
         RecordStore rs = null;
+        boolean needsSave = false;
         try {
             rs = RecordStore.openRecordStore(RS_BOOKMARKS, true);
             if (rs.getNumRecords() == 0) {
-                // Populate default bookmarks
-                addBookmark("Robi Portal (Robi-INTERNET)", "http://wap.robi.com.bd");
-                addBookmark("YouTube Video Search", "search:youtube");
-                addBookmark("Search https://www.youtube.com/", "https://www.youtube.com/search");
-                addBookmark("YouTube Videos", "https://www.youtube.com");
-                addBookmark("KamTape Video Search", "search:kamtape");
-                addBookmark("KamTape Videos", "https://www.kamtape.com");
-                addBookmark("Bing Search", "https://www.bing.com");
-                addBookmark("FrogFind! (Retro Search)", "https://www.frogfind.com");
-                addBookmark("Wikipedia Mobile", "https://en.wikipedia.org");
-                addBookmark("Hacker News", "https://news.ycombinator.com");
-                addBookmark("BBC News", "https://www.bbc.com/news");
-                addBookmark("The Old Net", "https://theoldnet.com");
-                addBookmark("Sample Media Page", "http://127.0.0.1:8080/sample_media");
+                // Populate default bookmarks in memory
+                addBookmarkMemory("Robi Portal (Robi-INTERNET)", "http://wap.robi.com.bd");
+                addBookmarkMemory("YouTube Video Search", "search:youtube");
+                addBookmarkMemory("Search https://www.youtube.com/", "https://www.youtube.com/search");
+                addBookmarkMemory("YouTube Videos", "https://www.youtube.com");
+                addBookmarkMemory("KamTape Video Search", "search:kamtape");
+                addBookmarkMemory("KamTape Videos", "https://www.kamtape.com");
+                addBookmarkMemory("Bing Search", "https://www.bing.com");
+                addBookmarkMemory("FrogFind! (Retro Search)", "https://www.frogfind.com");
+                addBookmarkMemory("Wikipedia Mobile", "https://en.wikipedia.org");
+                addBookmarkMemory("Hacker News", "https://news.ycombinator.com");
+                addBookmarkMemory("BBC News", "https://www.bbc.com/news");
+                addBookmarkMemory("The Old Net", "https://theoldnet.com");
+                addBookmarkMemory("Sample Media Page", "http://127.0.0.1:8080/sample_media");
+                needsSave = true;
             } else {
-                boolean hasFrogFind = false;
-                boolean hasKamTape = false;
-                boolean hasYouTube = false;
-                boolean hasRobi = false;
                 RecordEnumeration re = rs.enumerateRecords(null, null, false);
                 while (re.hasNextElement()) {
                     byte[] data = re.nextRecord();
@@ -293,52 +298,66 @@ public class StorageManager {
                     if (tab > 0) {
                         String bTitle = line.substring(0, tab);
                         String bUrl = line.substring(tab + 1);
-                        bookmarkTitles.addElement(bTitle);
-                        bookmarkUrls.addElement(bUrl);
-                        if (bUrl.indexOf("frogfind.com") >= 0) {
-                            hasFrogFind = true;
-                        }
-                        if (bUrl.indexOf("kamtape") >= 0) {
-                            hasKamTape = true;
-                        }
-                        if (bUrl.indexOf("youtube") >= 0) {
-                            hasYouTube = true;
-                        }
-                        if (bUrl.indexOf("robi") >= 0) {
-                            hasRobi = true;
+                        if (!bookmarkUrls.contains(bUrl)) {
+                            bookmarkTitles.addElement(bTitle);
+                            bookmarkUrls.addElement(bUrl);
+                        } else {
+                            needsSave = true; // Clean duplicates from RMS
                         }
                     }
                 }
                 re.destroy();
-                if (!hasRobi) {
-                    addBookmark("Robi Portal (Robi-INTERNET)", "http://wap.robi.com.bd");
+
+                if (!bookmarkUrls.contains("http://wap.robi.com.bd")) {
+                    addBookmarkMemory("Robi Portal (Robi-INTERNET)", "http://wap.robi.com.bd");
+                    needsSave = true;
                 }
-                if (!hasFrogFind) {
-                    addBookmark("FrogFind! (Retro Search)", "https://www.frogfind.com");
+                if (!bookmarkUrls.contains("https://www.frogfind.com")) {
+                    addBookmarkMemory("FrogFind! (Retro Search)", "https://www.frogfind.com");
+                    needsSave = true;
                 }
-                if (!hasKamTape) {
-                    addBookmark("KamTape Video Search", "search:kamtape");
-                    addBookmark("KamTape Videos", "https://www.kamtape.com");
+                if (!bookmarkUrls.contains("search:kamtape")) {
+                    addBookmarkMemory("KamTape Video Search", "search:kamtape");
+                    needsSave = true;
                 }
-                if (!hasYouTube) {
-                    addBookmark("YouTube Video Search", "search:youtube");
-                    addBookmark("Search https://www.youtube.com/", "https://www.youtube.com/search");
-                    addBookmark("YouTube Videos", "https://www.youtube.com");
+                if (!bookmarkUrls.contains("https://www.kamtape.com")) {
+                    addBookmarkMemory("KamTape Videos", "https://www.kamtape.com");
+                    needsSave = true;
+                }
+                if (!bookmarkUrls.contains("search:youtube")) {
+                    addBookmarkMemory("YouTube Video Search", "search:youtube");
+                    needsSave = true;
+                }
+                if (!bookmarkUrls.contains("https://www.youtube.com/search")) {
+                    addBookmarkMemory("Search https://www.youtube.com/", "https://www.youtube.com/search");
+                    needsSave = true;
+                }
+                if (!bookmarkUrls.contains("https://www.youtube.com")) {
+                    addBookmarkMemory("YouTube Videos", "https://www.youtube.com");
+                    needsSave = true;
                 }
             }
         } catch (Exception e) {
         } finally {
             closeRs(rs);
+            rs = null;
+        }
+
+        if (needsSave) {
+            saveBookmarks();
         }
     }
 
-    private void saveBookmarks() {
+    private synchronized void saveBookmarks() {
         RecordStore rs = null;
         try {
-            RecordStore.deleteRecordStore(RS_BOOKMARKS);
-        } catch (Exception e) {}
-        try {
             rs = RecordStore.openRecordStore(RS_BOOKMARKS, true);
+            RecordEnumeration re = rs.enumerateRecords(null, null, false);
+            while (re.hasNextElement()) {
+                int id = re.nextRecordId();
+                rs.deleteRecord(id);
+            }
+            re.destroy();
             for (int i = 0; i < bookmarkTitles.size(); i++) {
                 String line = bookmarkTitles.elementAt(i) + "\t" + bookmarkUrls.elementAt(i);
                 byte[] b = line.getBytes();
@@ -357,7 +376,10 @@ public class StorageManager {
             RecordEnumeration re = rs.enumerateRecords(null, null, false);
             while (re.hasNextElement()) {
                 byte[] data = re.nextRecord();
-                historyList.addElement(new String(data));
+                String h = new String(data);
+                if (!historyList.contains(h)) {
+                    historyList.addElement(h);
+                }
             }
             re.destroy();
         } catch (Exception e) {
@@ -366,13 +388,16 @@ public class StorageManager {
         }
     }
 
-    private void saveHistory() {
+    private synchronized void saveHistory() {
         RecordStore rs = null;
         try {
-            RecordStore.deleteRecordStore(RS_HISTORY);
-        } catch (Exception e) {}
-        try {
             rs = RecordStore.openRecordStore(RS_HISTORY, true);
+            RecordEnumeration re = rs.enumerateRecords(null, null, false);
+            while (re.hasNextElement()) {
+                int id = re.nextRecordId();
+                rs.deleteRecord(id);
+            }
+            re.destroy();
             for (int i = 0; i < historyList.size(); i++) {
                 byte[] b = ((String) historyList.elementAt(i)).getBytes();
                 rs.addRecord(b, 0, b.length);

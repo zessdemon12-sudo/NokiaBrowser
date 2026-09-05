@@ -471,6 +471,35 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
   - Tested custom cellular headers (`X-Nokia-SIM`, `X-Nokia-Bearer`, `X-Nokia-Operator`, `X-Nokia-APN`, `X-Nokia-Signal`).
   - Tested MicroEmulator launch loading `build/NokiaBrowser.jad` with 0 exceptions.
 
+### Event 017: KEmulator (`kemnnx64`) Compatibility, RMS Active Store Fix & Offline Diagnostic
+- **Timestamp**: 2026-09-06T01:42:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Fix `Cellular error (E): Connection refused` when running in KEmulator nnmod x64 (`kemnnx64`), resolve RMS `tried to delete active store` duplicate record bug, and provide a one-click launcher script `run-kemulator.sh`.
+- **Root Cause Analysis**:
+  1. **Gateway Inactivity**: When KEmulator was launched without running `server/server.js`, connecting to `http://127.0.0.1:8080` resulted in immediate TCP connection refusal (`Connection refused`).
+  2. **RMS Active Store Exception (`StorageManager.java`)**: In `loadBookmarks()`, while `rs` was open, `addBookmark()` was called in a loop, triggering `saveBookmarks()` which attempted `RecordStore.deleteRecordStore(RS_BOOKMARKS)`. In KEmulator, deleting an open record store threw `[RMS] tried to delete active store`. This caused repeated records to be appended rather than overwritten, bloating `nb_bookmarks` to 331 records!
+  3. **Vague Error Reporting**: Network failure reported generic `"Cellular error (E): Connection refused"` instead of diagnosing that the Modern Gateway server is offline.
+- **Architectural Changes**:
+  1. **Storage Engine Fix (`StorageManager.java`)**:
+     - Converted `loadBookmarks()` to load and deduplicate bookmarks in memory first.
+     - Closed the `rs` handle cleanly before invoking any save operations.
+     - Refactored `saveBookmarks()` and `saveHistory()` to clear records cleanly via `rs.deleteRecord(id)` rather than `RecordStore.deleteRecordStore()`, adhering to MIDP 2.0 specifications.
+     - Cleaned corrupted bloated RMS records in `/home/a1/Downloads/kemnnx64/rms/`.
+  2. **Clear Gateway Offline Diagnostics (`NetworkManager.java`)**:
+     - When `ConnectException` or `Connection refused` occurs, displays:
+       `"Gateway offline: http://127.0.0.1:8080\nRun: node server/server.js"`.
+  3. **KEmulator Launcher Script (`run-kemulator.sh`)**:
+     - Automatically verifies/starts the Gateway Server on port 8080 (via persistent `tmux` session or background process).
+     - Automatically invokes `/home/a1/Downloads/kemnnx64/kemulator.sh build/NokiaBrowser.jar`.
+  4. **Documentation**:
+     - Updated `README.md` and `PROJECT_LOG.md` with KEmulator startup procedures.
+- **Verification**:
+  - Recompiled with `./build.sh`: 0 errors (**49,273 bytes**, strictly under 50 KB ceiling).
+  - Started gateway server in persistent tmux session: listening on `0.0.0.0:8080`.
+  - Executed KEmulator with `build/NokiaBrowser.jar`:
+    - Clean RMS initialization: 13 bookmarks saved with 0 duplicates.
+    - Successfully connected to `http://127.0.0.1:8080/page?url=https://www.bing.com&img=1` with 0 exceptions.
+
 ---
 
 ## 4. Keypad Controls Reference (240x320 Nokia QVGA)

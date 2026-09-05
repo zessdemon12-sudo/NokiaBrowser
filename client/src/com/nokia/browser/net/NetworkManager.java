@@ -169,7 +169,13 @@ public class NetworkManager {
         }
 
         if (!success && lastException != null) {
-            callback.onError("Cellular error (" + simManager.getBearerBadge() + "): " + lastException.getMessage());
+            String msg = lastException.getMessage();
+            if (msg == null || msg.length() == 0) msg = lastException.getClass().getName();
+            if (msg.indexOf("refused") >= 0 || msg.indexOf("Connect") >= 0) {
+                callback.onError("Gateway offline: " + storage.getGatewayUrl() + "\nRun: node server/server.js");
+            } else {
+                callback.onError("Cellular error (" + simManager.getBearerBadge() + "): " + msg);
+            }
         }
     }
 

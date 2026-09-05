@@ -89,10 +89,16 @@ A high-performance modern web browser engineered specifically for vintage **Noki
 ```
 The server runs on port 8080 (or `PORT=...`).
 
-### 2. Test in Emulator (MicroEmulator 240x320)
-```bash
-./run_emulator.sh
-```
+### 2. Test in Emulator
+- **Using KEmulator (`kemnnx64`)**:
+  ```bash
+  ./run-kemulator.sh
+  ```
+  *(Automatically checks/starts the Modern Gateway server on port 8080 and launches `build/NokiaBrowser.jar` in KEmulator)*
+- **Using MicroEmulator (240x320 QVGA)**:
+  ```bash
+  ./run_emulator.sh
+  ```
 
 ### 3. Build JAR and JAD from Source
 ```bash
