@@ -693,3 +693,20 @@ Runs MicroEmulator in 240x320 portrait mode loading `build/NokiaBrowser.jad`.
 4. **Mandatory MIT License on GitHub Uploads**:
    - Per user rule: Every time everything is uploaded to GitHub, ensure the project is licensed under the MIT License (`LICENSE` present at root, declared in `README.md`, and applied to any GitHub repo).
 
+
+---
+
+## Event 021 — Fix `SampledAudioPlayer` Audio Error in KEmulator (2026-09-06)
+
+**Reported error:** `[SampledAudioPlayer] open error: Stream of unsupported format` (×4 during YouTube playback in kemnnx64)
+
+### Root Cause
+KEmulator has two audio paths: **JLayer MP3** (via `createPlayer(InputStream,"audio/mpeg")`) and **SampledAudioPlayer/WAV** (via `createPlayer(urlString)`). When the first MP3 attempt threw an exception, the fallback `Manager.createPlayer(audioUrl)` triggered KEmulator's URL-locator which auto-routed the live MP3 stream through `SampledAudioPlayer` → "Stream of unsupported format".
+
+### Fix Applied
+**`client/src/com/nokia/browser/media/MediaPlayerCanvas.java`** — lines 235–259:
+- For `/video_audio` URLs: re-opens a fresh `HttpConnection` and calls `Manager.createPlayer(is, "audio/mpeg")` — **never** uses URL-locator form (which triggers SampledAudioPlayer).
+- For other audio URLs: keeps existing `Manager.createPlayer(url)` fallback.
+
+### Result
+JAR: **49,994 bytes** ✓ | Build: **SUCCESS** | SampledAudioPlayer path fully bypassed for YouTube audio.

@@ -232,12 +232,29 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                 }
             }
 
-            // Fallback: URL locator
+            // Fallback: for /video_audio endpoints always use explicit audio/mpeg stream
+            // to prevent KEmulator routing live MP3 through SampledAudioPlayer (WAV path).
+            // URL-locator form (Manager.createPlayer(url)) is only used for non-gateway URLs.
             if (player == null) {
-                try {
-                    player = Manager.createPlayer(audioUrl);
-                } catch (Throwable t) {
-                    player = null;
+                if (audioUrl.indexOf("/video_audio") >= 0) {
+                    // Re-open fresh connection and force audio/mpeg
+                    try {
+                        if (audioIs != null) { try { audioIs.close(); } catch (Throwable t2) {} audioIs = null; }
+                        if (audioConn != null) { try { audioConn.close(); } catch (Throwable t2) {} audioConn = null; }
+                        audioConn = (HttpConnection) Connector.open(audioUrl, Connector.READ, true);
+                        audioConn.setRequestMethod(HttpConnection.GET);
+                        audioConn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
+                        audioIs = audioConn.openInputStream();
+                        player = Manager.createPlayer(audioIs, "audio/mpeg");
+                    } catch (Throwable t) {
+                        player = null;
+                    }
+                } else {
+                    try {
+                        player = Manager.createPlayer(audioUrl);
+                    } catch (Throwable t) {
+                        player = null;
+                    }
                 }
             }
 
