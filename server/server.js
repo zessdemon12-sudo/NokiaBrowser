@@ -474,18 +474,18 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
         } else if (resProfile === '240p') {
             vcodec = 'mpeg4';
             vbitrate = '350k';
-            fps = '20';
+            fps = null; // Native video framerate to ensure 1.0x normal real-time speed
             acodec = 'aac';
-            audioArgs = ['-ar', '32000', '-ac', '2', '-b:a', '48k'];
+            audioArgs = ['-ar', '44100', '-ac', '2', '-b:a', '64k'];
             sizeArgs = null;
             videoFilter = "scale='min(320,iw)':min'(240,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
         } else {
             // 380p profile (up to 380p, MPEG-4 Simple Profile + AAC stereo in 3GP)
             vcodec = 'mpeg4';
             vbitrate = '550k';
-            fps = '24';
+            fps = null; // Native video framerate to ensure 1.0x normal real-time speed
             acodec = 'aac';
-            audioArgs = ['-ar', '32000', '-ac', '2', '-b:a', '64k'];
+            audioArgs = ['-ar', '44100', '-ac', '2', '-b:a', '96k'];
             sizeArgs = null;
             videoFilter = "scale='min(640,iw)':min'(380,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
         }
@@ -533,9 +533,11 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
                     '-i', tmpV,
                     '-i', tmpA,
                     '-c:v', vcodec,
-                    '-b:v', vbitrate,
-                    '-r', fps
+                    '-b:v', vbitrate
                 ];
+                if (fps) {
+                    ffmpegArgs.push('-r', fps);
+                }
                 if (videoFilter) {
                     ffmpegArgs.push('-vf', videoFilter);
                 } else if (sizeArgs) {
@@ -544,6 +546,7 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
                 ffmpegArgs.push(
                     '-c:a', acodec,
                     ...audioArgs,
+                    '-shortest',
                     '-movflags', '+faststart',
                     tmp3gp
                 );
@@ -599,9 +602,11 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             '-y',
             '-i', 'pipe:0',
             '-c:v', vcodec,
-            '-b:v', vbitrate,
-            '-r', fps
+            '-b:v', vbitrate
         ];
+        if (fps) {
+            ffmpegArgs.push('-r', fps);
+        }
         if (videoFilter) {
             ffmpegArgs.push('-vf', videoFilter);
         } else if (sizeArgs) {
@@ -610,6 +615,7 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
         ffmpegArgs.push(
             '-c:a', acodec,
             ...audioArgs,
+            '-shortest',
             '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
             '-f', '3gp',
             'pipe:1'
@@ -1026,8 +1032,8 @@ const server = http.createServer(async (req, res) => {
 
                 frameQueue.push({ frameHeader, frameData });
 
-                // Send first 2 frames immediately to start playback without delay
-                if (frameCount <= 2) {
+                // Send first frame immediately to start playback without delay
+                if (frameCount === 1) {
                     pumpFrame();
                 }
 

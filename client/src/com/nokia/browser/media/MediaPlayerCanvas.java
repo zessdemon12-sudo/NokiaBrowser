@@ -368,6 +368,13 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
             statusMessage = "Playing";
             repaint();
 
+            // Wait briefly for companion audio player to start up so video and audio begin in lockstep
+            if (player != null && player.getState() != Player.STARTED) {
+                for (int w = 0; w < 6 && player != null && player.getState() != Player.STARTED; w++) {
+                    try { Thread.sleep(50); } catch (Exception e) {}
+                }
+            }
+
             while (running) {
                 if (isPaused) {
                     try { Thread.sleep(100); } catch (InterruptedException e) {}
@@ -394,27 +401,35 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                     simManager.recordBytes(len + 8);
                 }
 
-                // Synchronize video frame with companion audio player
+                // Synchronize video frame with companion audio player:
+                // Network socket read (streamDis.readInt) already paces arrival at 125ms (8 FPS).
+                // Only throttle if video has drifted severely ahead of audio (>500ms),
+                // and skip rendering if video is lagging behind audio (<-300ms).
+                boolean skipRender = false;
                 if (player != null) {
                     try {
                         if (player.getState() == Player.STARTED) {
                             long aMs = player.getMediaTime() / 1000L;
                             long d = (long) curMs - aMs;
-                            if (d > 15) {
-                                Thread.sleep(Math.min(d, 500L));
+                            if (d > 500) {
+                                Thread.sleep(Math.min(d - 400, 100L));
+                            } else if (d < -300) {
+                                skipRender = true;
                             }
                         }
                     } catch (Throwable t) {}
                 }
 
-                try {
-                    Image frame = Image.createImage(frameBuffer, 0, len);
-                    this.currentVideoFrame = frame;
-                    this.mediaTimeUs = (long) curMs * 1000L;
-                    // Full canvas repaint so video, progress bar, and status update cleanly in portrait/landscape
-                    repaint();
-                } catch (Throwable t) {
-                    // Frame decode skip
+                if (!skipRender) {
+                    try {
+                        Image frame = Image.createImage(frameBuffer, 0, len);
+                        this.currentVideoFrame = frame;
+                        this.mediaTimeUs = (long) curMs * 1000L;
+                        // Full canvas repaint so video, progress bar, and status update cleanly in portrait/landscape
+                        repaint();
+                    } catch (Throwable t) {
+                        // Frame decode skip
+                    }
                 }
             }
 

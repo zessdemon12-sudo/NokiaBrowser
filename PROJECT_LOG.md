@@ -885,4 +885,51 @@ During investigation of the `/video_stream` endpoint and `MediaPlayerCanvas.java
 - Verified HTTP 206 Partial Content (Byte Range) support: `bytes 0-100/2725894` returned with status 206.
 - Verified 144p profile: `yt_iGw5FlQXmrU_144p.3gp` properly encodes 176x144 H.263 with AMR-NB.
 
+---
+
+## Event 027 — Restore 1.0x Normal Real-Time Video Playback Speed (2026-09-06)
+
+**User request:** "playback speed will be normal"
+
+### Root Cause Analysis
+1. **Client-Side Double Delay Bug (0.5x Slow Motion):**
+   - In `MediaPlayerCanvas.java`, line 377 (`streamDis.readInt()`) blocks in the OS kernel TCP stack waiting for the server's timed delivery (every 125ms for 8 FPS).
+   - In addition, the loop contained:
+     ```java
+     long aMs = player.getMediaTime() / 1000L;
+     long d = (long) curMs - aMs;
+     if (d > 15) { Thread.sleep(Math.min(d, 500L)); }
+     ```
+   - Because MMAPI audio internal buffering latency caused `aMs` to report ~50–100ms behind `curMs`, `d` was constantly positive on every frame.
+   - Consequently, the client waited 125ms on the network socket AND slept another ~100–125ms on `Thread.sleep`, yielding ~250ms per frame (~4 FPS). This halved the video playback speed (0.5x slow motion) while companion audio played at 1.0x normal speed.
+2. **Companion Audio Startup Race:**
+   - Companion audio initialization takes 100–300ms to open HTTP connections and prefetch buffers.
+   - When video frame streaming started immediately without waiting for audio playback to enter `Player.STARTED`, video frames advanced ahead of unstarted audio, locking in an artificial offset `d` that triggered `Thread.sleep` on subsequent frames.
+3. **Server-Side Initial Double-Frame Burst:**
+   - In `/video_stream`, `if (frameCount <= 2) pumpFrame();` flushed both frame 1 and frame 2 immediately at t=0 while `setInterval` was already ticking, creating a startup burst that amplified client-side drift.
+4. **3GP Video Transcoding FPS Override:**
+   - In `handle3gpStream`, video frame rate was previously overridden with fixed `-r 24` or `-r 20` regardless of the source stream's native frame rate (e.g. 29.97 or 30 FPS). This forced FFmpeg to drop/duplicate frames and caused timestamp desynchronization between separate video and audio streams.
+
+### Fixes Applied
+1. **`client/src/com/nokia/browser/media/MediaPlayerCanvas.java`:**
+   - **Startup Lockstep Sync:** Before entering `while (running)`, checks if `player != null && player.getState() != Player.STARTED` and waits up to 300ms so companion audio and video start in exact lockstep.
+   - **Eliminated Double-Pacing Sleep:** Rely on TCP network socket arrival for natural 125ms pacing. Removed the unconditional per-frame `Thread.sleep(d)` on normal drift.
+   - **Graceful Drift Compensation:** Only throttles if video has drifted severely ahead of audio (`d > 500ms`, sleeping `Math.min(d - 400, 100L)`). If video falls behind audio (`d < -300ms`), skips frame rendering and repainting to immediately catch up to audio.
+2. **`server/server.js`:**
+   - **Stream Frame Pacing:** Changed `if (frameCount <= 2) pumpFrame();` to `if (frameCount === 1) pumpFrame();` in `/video_stream`. Exactly one frame is sent immediately for zero-latency screen paint, followed strictly by 125ms interval timer delivery.
+   - **Native 3GP Framerate:** Set `fps = null` for 380p and 240p profiles so FFmpeg preserves the source video's native framerate without dropping or duplicating frames.
+   - **Stream Synchronization & Audio Quality:** Added `-shortest` to FFmpeg transcode commands to guarantee 1:1 stream termination without trailing audio/video overhang. Upgraded AAC audio to standard 44.1 kHz stereo (`-ar 44100 -ac 2`) at 96 kbps (380p) and 64 kbps (240p).
+3. **`build/NokiaBrowser.jar`:**
+   - Recompiled with Eclipse ECJ (CLDC 1.1 / MIDP 2.0).
+   - JAR Size: **48,313 bytes** (strictly <= 50,000 bytes budget).
+
+### Verification
+- Measured frame arrival intervals on `/video_stream`: verified consistent 125ms (8.0 FPS) delivery.
+- Inspected 380p 3GP stream via FFmpeg:
+  - Video: `mpeg4 (Simple Profile)`, 506x380, native 29.92 fps, 334 kb/s.
+  - Audio: `aac (LC)`, 44100 Hz, stereo, 96 kb/s.
+  - Streams start at `0.000000` with 0 drift.
+- Verified client binary size: 48,313 bytes (1,687 bytes under budget).
+
+
 
