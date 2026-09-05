@@ -805,3 +805,43 @@ During investigation of the `/video_stream` endpoint and `MediaPlayerCanvas.java
 ### Verification
 - Simulated J2ME stream reading with Node.js script: successfully received and verified 5/5 valid JPEG frames (`validJPEG=true`) for YouTube and KamTape streams with accurate timestamps (0ms, 125ms, 250ms...).
 - Re-tested gateway server daemon resilience on port 8080.
+
+---
+
+## Event 025 — Fix Video Streaming Playback Pacing and Audio Synchronization (2026-09-06)
+
+**User request:** "there is a the problem in a video streaming in playback and audio"
+
+### Root Cause Analysis
+1. **Uncapped Server-to-Client Frame Delivery (Speedrun Glitch):**
+   - FFmpeg transcoded frames at ~150 FPS onto stdout. Without server-side pacing or client throttling, all 30 seconds of video were dumped over HTTP in under 2 seconds.
+   - The video finished immediately, jumping straight to "Finished", while the audio player was still at second 2, resulting in complete desynchronization and sudden playback stops.
+2. **Audio Cache File Truncation Bug:**
+   - In `server/server.js`, `/video_audio` previously piped directly to `server/cache/audio/<key>.mp3`.
+   - If an audio connection was closed or interrupted early (e.g. after 3–5 seconds), a partial file of only 20–50 KB was left on disk.
+   - Subsequent requests found `fs.existsSync(cachedAudio) && stats.size > 1000` and served the truncated file, causing audio to permanently cut out after a few seconds.
+3. **Missing Audio-Video Synchronization in Client:**
+   - In `MediaPlayerCanvas.java`, the video frame loop had no sync mechanism locking frame presentation to `player.getMediaTime()`.
+4. **Binary Size Budget (< 50,000 bytes):**
+   - Adding AV sync initially caused `build/NokiaBrowser.jar` to reach 50,145 bytes due to multiple anonymous `new Runnable()` classes in `MediaPlayerCanvas.java`.
+
+### Fixes Applied
+1. **`server/server.js`:**
+   - **8 FPS Server-Side Pacing Queue:** Implemented a paced frame buffer queue with `pumpFrame` fired via `setInterval(pumpFrame, 125)` (8 FPS). Pre-buffers 2 frames immediately on connection for zero-latency start.
+   - **FFmpeg Backpressure Control:** Automatically pauses `ffmpeg.stdout` when the frame queue exceeds 4 frames (500ms buffered) and resumes when under 3 frames, preventing excessive CPU/RAM usage.
+   - **Atomic Audio Cache:** Audio streams are now written to a temporary `.tmp` file and only renamed to `.mp3` upon complete, clean FFmpeg exit (`code === 0`). Incomplete or aborted streams remove the partial file.
+   - **Audio Seeking Byte-Offset Calculation:** Calculates accurate MP3 byte offsets (`Math.floor(sSec * 6000)`) for seeking cached audio.
+2. **`client/src/com/nokia/browser/media/MediaPlayerCanvas.java`:**
+   - **AV Sync:** Compares frame `curMs` with `player.getMediaTime() / 1000L`. When video is ahead of audio (`d > 15ms`), sleeps for `Math.min(d, 500L)` to stay synchronized with audio playback.
+   - **EOF Audio Cleanup:** Immediately stops companion audio player when video reaches end-of-stream (`len <= 0`).
+   - **Consolidated `resolveEndpointUrl`:** Unified URL rewriting to avoid redundant bytecode.
+   - **Unified `PlaybackTask`:** Replaced 5 anonymous `Runnable` inner classes with a single `PlaybackTask(mode, sec)` class, reducing class overhead by 4 files.
+3. **`build/NokiaBrowser.jar`:**
+   - Compiled with Eclipse ECJ (CLDC 1.1 / MIDP 2.0).
+   - JAR Size: **48,211 bytes** (well below the 50,000 bytes budget, saving nearly 1.8 KB!).
+
+### Verification
+- Tested `/video_stream`: verified 8 FPS pacing (frames delivered at ~125ms intervals).
+- Tested `/video_audio`: verified MP3 audio streaming stably and continuously.
+- Verified `build/NokiaBrowser.jar` size: 48,211 bytes.
+

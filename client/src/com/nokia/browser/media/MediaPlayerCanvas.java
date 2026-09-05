@@ -144,26 +144,30 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
 
     private void startPlayback() {
         if (isVideo) {
-            // Start video frame streaming thread
-            videoStreamThread = new Thread(new Runnable() {
-                public void run() {
-                    runVideoFrameStreamer(0);
-                }
-            });
+            videoStreamThread = new Thread(new PlaybackTask(0, 0));
             videoStreamThread.start();
         }
-
-        // Start audio playback thread (companion audio for video, or standalone audio)
-        Thread audioThread = new Thread(new Runnable() {
-            public void run() {
-                runAudioPlayer(0);
-            }
-        });
-        audioThread.start();
+        new Thread(new PlaybackTask(1, 0)).start();
 
         // Animation thread for UI updates
         animThread = new Thread(this);
         animThread.start();
+    }
+
+    private class PlaybackTask implements Runnable {
+        private int mode;
+        private long sec;
+        PlaybackTask(int mode, long sec) {
+            this.mode = mode;
+            this.sec = sec;
+        }
+        public void run() {
+            if (mode == 0) {
+                runVideoFrameStreamer(sec);
+            } else {
+                runAudioPlayer(sec);
+            }
+        }
     }
 
     /**
@@ -374,6 +378,9 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                 if (len <= 0) {
                     statusMessage = "Finished";
                     isPlaying = false;
+                    if (player != null) {
+                        try { player.stop(); } catch (Throwable t) {}
+                    }
                     repaint();
                     break;
                 }
@@ -385,6 +392,19 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                 streamDis.readFully(frameBuffer, 0, len);
                 if (simManager != null) {
                     simManager.recordBytes(len + 8);
+                }
+
+                // Synchronize video frame with companion audio player
+                if (player != null) {
+                    try {
+                        if (player.getState() == Player.STARTED) {
+                            long aMs = player.getMediaTime() / 1000L;
+                            long d = (long) curMs - aMs;
+                            if (d > 15) {
+                                Thread.sleep(Math.min(d, 500L));
+                            }
+                        }
+                    } catch (Throwable t) {}
                 }
 
                 try {
@@ -409,55 +429,34 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         }
     }
 
+    private String resolveEndpointUrl(String rawUrl, String endpoint) {
+        String base = rawUrl;
+        if (base.indexOf("/media?url=") >= 0) base = replaceString(base, "/media?url=", "/" + endpoint + "?url=");
+        else if (base.indexOf("/video.3gp?url=") >= 0) base = replaceString(base, "/video.3gp?url=", "/" + endpoint + "?url=");
+        else if (base.indexOf("/media_3gp?url=") >= 0) base = replaceString(base, "/media_3gp?url=", "/" + endpoint + "?url=");
+        else if (base.indexOf("/video_stream?url=") >= 0) base = replaceString(base, "/video_stream?url=", "/" + endpoint + "?url=");
+        else if (base.indexOf("/video_audio?url=") >= 0) base = replaceString(base, "/video_audio?url=", "/" + endpoint + "?url=");
+        else if (base.startsWith("/")) base = gatewayUrl + base;
+        else if (base.startsWith("http")) base = gatewayUrl + "/" + endpoint + "?url=" + com.nokia.browser.net.NetworkManager.urlEncode(base);
+        else base = gatewayUrl + "/" + endpoint + "?url=" + base;
+        return base;
+    }
+
     private String buildStreamUrl(String rawUrl, long startSec) {
-        String base;
-        if (rawUrl.indexOf("/media?url=") >= 0) {
-            base = replaceString(rawUrl, "/media?url=", "/video_stream?url=");
-        } else if (rawUrl.indexOf("/video.3gp?url=") >= 0) {
-            base = replaceString(rawUrl, "/video.3gp?url=", "/video_stream?url=");
-        } else if (rawUrl.indexOf("/media_3gp?url=") >= 0) {
-            base = replaceString(rawUrl, "/media_3gp?url=", "/video_stream?url=");
-        } else if (rawUrl.indexOf("/video_stream?url=") >= 0) {
-            base = rawUrl;
-        } else if (rawUrl.startsWith("/")) {
-            base = gatewayUrl + rawUrl;
-        } else if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
-            base = gatewayUrl + "/video_stream?url=" + com.nokia.browser.net.NetworkManager.urlEncode(rawUrl);
-        } else {
-            base = gatewayUrl + "/video_stream?url=" + rawUrl;
-        }
+        String base = resolveEndpointUrl(rawUrl, "video_stream");
         char sep = (base.indexOf('?') >= 0) ? '&' : '?';
         String sizeParam = isLandscape() ? "&max_w=320&max_h=180" : "&max_w=240&max_h=144";
         return base + sep + "t=" + startSec + "&fps=8" + sizeParam;
     }
 
     private String buildAudioUrl(String rawUrl, long startSec) {
-        String base;
-        if (rawUrl.indexOf("/media?url=") >= 0) {
-            base = replaceString(rawUrl, "/media?url=", "/video_audio?url=");
-        } else if (rawUrl.indexOf("/video.3gp?url=") >= 0) {
-            base = replaceString(rawUrl, "/video.3gp?url=", "/video_audio?url=");
-        } else if (rawUrl.indexOf("/media_3gp?url=") >= 0) {
-            base = replaceString(rawUrl, "/media_3gp?url=", "/video_audio?url=");
-        } else if (rawUrl.indexOf("/video_stream?url=") >= 0) {
-            base = replaceString(rawUrl, "/video_stream?url=", "/video_audio?url=");
-        } else if (rawUrl.indexOf("/video_audio?url=") >= 0) {
-            base = rawUrl;
-        } else if (!isVideo && (rawUrl.endsWith(".wav") || rawUrl.endsWith(".mp3"))) {
-            if (rawUrl.startsWith("/")) base = gatewayUrl + rawUrl;
-            else base = rawUrl;
-        } else if (rawUrl.startsWith("/")) {
-            base = gatewayUrl + "/video_audio?url=" + com.nokia.browser.net.NetworkManager.urlEncode(rawUrl);
-        } else if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) {
-            base = gatewayUrl + "/video_audio?url=" + com.nokia.browser.net.NetworkManager.urlEncode(rawUrl);
-        } else {
-            base = gatewayUrl + "/video_audio?url=" + rawUrl;
+        if (!isVideo && (rawUrl.endsWith(".wav") || rawUrl.endsWith(".mp3"))) {
+            return rawUrl.startsWith("/") ? (gatewayUrl + rawUrl) : rawUrl;
         }
+        String base = resolveEndpointUrl(rawUrl, "video_audio");
         char sep = (base.indexOf('?') >= 0) ? '&' : '?';
         String res = base + sep + "t=" + startSec;
-        if (base.indexOf("/video_audio") >= 0 && base.indexOf("format=") < 0) {
-            res += "&format=mp3";
-        }
+        if (base.indexOf("format=") < 0) res += "&format=mp3";
         return res;
     }
 
@@ -696,33 +695,10 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         if (targetSec < 0) targetSec = 0;
 
         if (isVideo) {
-            // Reconnect frame streamer at new second
             closeStreamConnection();
-            final long sSec = targetSec;
-            Thread seekThread = new Thread(new Runnable() {
-                public void run() {
-                    runVideoFrameStreamer(sSec);
-                }
-            });
-            seekThread.start();
-
-            // Reconnect companion audio player at new second
-            Thread audioSeekThread = new Thread(new Runnable() {
-                public void run() {
-                    runAudioPlayer(sSec);
-                }
-            });
-            audioSeekThread.start();
-        } else {
-            // Pure audio seek
-            final long sSec = targetSec;
-            Thread audioSeekThread = new Thread(new Runnable() {
-                public void run() {
-                    runAudioPlayer(sSec);
-                }
-            });
-            audioSeekThread.start();
+            new Thread(new PlaybackTask(0, targetSec)).start();
         }
+        new Thread(new PlaybackTask(1, targetSec)).start();
         repaint();
     }
 

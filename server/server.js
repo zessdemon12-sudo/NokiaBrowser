@@ -871,6 +871,39 @@ const server = http.createServer(async (req, res) => {
         let imgBuffer = Buffer.alloc(0);
         let frameCount = 0;
         const targetFps = parseFloat(fps) || 8.0;
+        const frameIntervalMs = Math.max(50, Math.round(1000.0 / targetFps));
+
+        const frameQueue = [];
+        let timer = null;
+        let ffmpegClosed = false;
+
+        function pumpFrame() {
+            if (res.writableEnded || !res.writable) {
+                if (timer) clearInterval(timer);
+                return;
+            }
+            if (frameQueue.length > 0) {
+                const item = frameQueue.shift();
+                res.write(item.frameHeader);
+                res.write(item.frameData);
+
+                // Resume FFmpeg if queue has drained and was paused
+                if (frameQueue.length < 3 && !ffmpegClosed && ffmpeg.stdout.isPaused()) {
+                    ffmpeg.stdout.resume();
+                }
+            } else if (ffmpegClosed) {
+                if (timer) clearInterval(timer);
+                if (!res.writableEnded) {
+                    const eos = Buffer.alloc(4);
+                    eos.writeInt32BE(0, 0);
+                    res.write(eos);
+                    res.end();
+                }
+            }
+        }
+
+        // Send 1 frame every 125ms (8 fps)
+        timer = setInterval(pumpFrame, frameIntervalMs);
 
         ffmpeg.stdout.on('data', (chunk) => {
             imgBuffer = Buffer.concat([imgBuffer, chunk]);
@@ -899,11 +932,18 @@ const server = http.createServer(async (req, res) => {
                 frameHeader.writeUInt32BE(frameLen, 0);
                 const curMs = Math.round((sSec * 1000) + (frameCount * (1000.0 / targetFps)));
                 frameHeader.writeUInt32BE(curMs, 4);
+                frameCount++;
 
-                if (!res.writableEnded) {
-                    res.write(frameHeader);
-                    res.write(frameData);
-                    frameCount++;
+                frameQueue.push({ frameHeader, frameData });
+
+                // Send first 2 frames immediately to start playback without delay
+                if (frameCount <= 2) {
+                    pumpFrame();
+                }
+
+                // Pause FFmpeg if queue has 4 frames buffered (500ms) to throttle encoding rate
+                if (frameQueue.length >= 4 && !ffmpeg.stdout.isPaused()) {
+                    ffmpeg.stdout.pause();
                 }
             }
         });
@@ -913,15 +953,13 @@ const server = http.createServer(async (req, res) => {
         ffmpeg.stderr.on('data', (d) => {});
 
         req.on('close', () => {
+            if (timer) clearInterval(timer);
             try { ffmpeg.kill(); } catch (e) {}
         });
         ffmpeg.on('close', () => {
-            if (!res.writableEnded) {
-                // End of stream marker: 4-byte 0 length
-                const eos = Buffer.alloc(4);
-                eos.writeInt32BE(0, 0);
-                res.write(eos);
-                res.end();
+            ffmpegClosed = true;
+            if (frameQueue.length === 0) {
+                pumpFrame();
             }
         });
 
@@ -1050,14 +1088,18 @@ const server = http.createServer(async (req, res) => {
             const totalFileSize = stat.size;
 
             if (isMp3) {
-                res.writeHead(200, {
-                    'Content-Type': 'audio/mpeg',
-                    'Content-Length': totalFileSize.toString(),
-                    'Cache-Control': 'no-cache',
-                    'Connection': 'close',
-                    'Access-Control-Allow-Origin': '*'
-                });
-                return fs.createReadStream(cachedFilePath).pipe(res);
+                const byteOffset = Math.floor(sSec * 6000);
+                if (byteOffset < totalFileSize) {
+                    const remainingData = totalFileSize - byteOffset;
+                    res.writeHead(200, {
+                        'Content-Type': 'audio/mpeg',
+                        'Content-Length': remainingData.toString(),
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'close',
+                        'Access-Control-Allow-Origin': '*'
+                    });
+                    return fs.createReadStream(cachedFilePath, { start: byteOffset }).pipe(res);
+                }
             } else {
                 const byteOffset = 44 + Math.floor(sSec * 32000);
                 if (byteOffset < totalFileSize) {
@@ -1117,19 +1159,17 @@ const server = http.createServer(async (req, res) => {
             'Access-Control-Allow-Origin': '*'
         });
 
+        const tempCachePath = cachedFilePath + '.tmp';
         let cacheWriter = null;
-        if (!isMp3) {
-            // 44-byte streaming WAV header
-            const wavHdr = makeWavHeader(16000, 1, 16, 0x7FFFFFF0);
-            res.write(wavHdr);
-            if (sSec === 0) {
-                cacheWriter = fs.createWriteStream(cachedFilePath);
-                cacheWriter.write(wavHdr);
-            }
-        } else {
-            if (sSec === 0) {
-                cacheWriter = fs.createWriteStream(cachedFilePath);
-            }
+        if (sSec === 0) {
+            try {
+                if (fs.existsSync(tempCachePath)) fs.unlinkSync(tempCachePath);
+                cacheWriter = fs.createWriteStream(tempCachePath);
+                if (!isMp3) {
+                    const wavHdr = makeWavHeader(16000, 1, 16, 0x7FFFFFF0);
+                    cacheWriter.write(wavHdr);
+                }
+            } catch (e) {}
         }
 
         ffmpeg.stdout.pipe(res);
@@ -1144,10 +1184,26 @@ const server = http.createServer(async (req, res) => {
         req.on('close', () => {
             try { ffmpeg.kill(); } catch (e) {}
             if (cacheWriter) {
-                try { cacheWriter.end(); } catch (e) {}
+                try {
+                    cacheWriter.end();
+                    if (fs.existsSync(tempCachePath)) fs.unlinkSync(tempCachePath);
+                } catch (e) {}
             }
         });
-        ffmpeg.on('close', () => {
+        ffmpeg.on('close', (code) => {
+            if (cacheWriter) {
+                cacheWriter.end(() => {
+                    if (code === 0) {
+                        try {
+                            fs.renameSync(tempCachePath, cachedFilePath);
+                        } catch (e) {}
+                    } else {
+                        try {
+                            if (fs.existsSync(tempCachePath)) fs.unlinkSync(tempCachePath);
+                        } catch (e) {}
+                    }
+                });
+            }
             if (!res.writableEnded) res.end();
         });
 
