@@ -168,6 +168,7 @@ async function getVideoInfo(videoId) {
             channel: data.channel || data.uploader || 'YouTube Creator',
             views: formatViews(data.view_count),
             duration: data.duration_string || formatDuration(data.duration),
+            durationSec: data.duration || 0,
             uploadDate: data.upload_date ? `${data.upload_date.substring(0,4)}-${data.upload_date.substring(4,6)}-${data.upload_date.substring(6,8)}` : '',
             desc: data.description || '',
             thumb: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
@@ -232,7 +233,8 @@ async function handleWatchPage(videoId, originalUrl, res, gatewayHost, decodeHtm
     const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(info.thumb)}`;
     const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}`;
-    const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(watchUrl)}`;
+    const durParam = info.durationSec ? `&dur=${info.durationSec}` : '';
+    const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(watchUrl)}${durParam}`;
 
     lines.push('META:TITLE=' + cleanTitle + ' - YouTube');
     lines.push('META:URL=' + watchUrl);

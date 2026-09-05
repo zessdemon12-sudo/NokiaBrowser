@@ -758,3 +758,50 @@ JAR: **49,994 bytes** ✓ | Build: **SUCCESS** | SampledAudioPlayer path fully b
 
 ### JAR
 - **49,994 bytes** ✓ (unchanged)
+
+---
+
+## Event 024 — Fix Video Frame Streaming Protocol Desynchronization (2026-09-06)
+
+**User request:** "video streaming not working"
+
+### Root Cause Analysis
+During investigation of the `/video_stream` endpoint and `MediaPlayerCanvas.java`, a critical byte-level packet protocol desynchronization was discovered:
+
+1. **Missing `curMs` in Server Frame Header:**
+   - In `MediaPlayerCanvas.java` (lines 373–385), the frame loop expects:
+     - `int len = streamDis.readInt()` (4 bytes length)
+     - `int curMs = streamDis.readInt()` (4 bytes timestamp in ms)
+     - `streamDis.readFully(frameBuffer, 0, len)` (JPEG image payload)
+   - However, in `server/server.js`, the frame header was only writing 4 bytes (`frameHeader.writeUInt32BE(frameLen, 0)`), omitting the 4-byte `curMs` timestamp.
+   - Consequently, `streamDis.readInt()` in the client consumed the first 4 bytes of the JPEG image (`0xFF 0xD8 ...`) as `curMs`, causing every single JPEG frame to be corrupt and fail `Image.createImage()`.
+   - On the subsequent frame, `streamDis.readInt()` read arbitrary JPEG bytes as `len`, resulting in `len <= 0` or stream EOF, causing the stream to immediately display "Stream ended" or "Finished".
+
+2. **Stream Header Protocol Mismatch:**
+   - Client expects `durMs` (4 bytes UInt32BE) after the 4-byte `'NVID'` magic.
+   - Server was writing 2 bytes width + 2 bytes height instead of duration in ms.
+
+3. **Dirty Region Repaint Clip:**
+   - `MediaPlayerCanvas.java` called `repaint(0, 44, getWidth(), 144)`. In landscape (320x240) and software 90° rotation, this clip was in the wrong coordinates and skipped repainting the progress bar and timestamp.
+
+### Fixes Applied
+
+1. **`server/server.js`:**
+   - Updated 8-byte stream header: Magic `'NVID'` (4 bytes) + `durMs` (4 bytes UInt32BE).
+   - Updated frame packet: `[4 bytes length uint32BE][4 bytes curMs timestamp uint32BE][JPEG bytes]`.
+   - Added clean End-of-Stream 4-byte zero length packet on FFmpeg process exit.
+   - Added `/health` endpoint to support automated health checks and test scripts.
+
+2. **`server/youtube.js`:**
+   - Included `durationSec` in `getVideoInfo` and passed `&dur=` parameter to `proxyMedia` URLs so client progress bar and total time show accurately.
+
+3. **`client/src/com/nokia/browser/media/MediaPlayerCanvas.java`:**
+   - Updated frame receiver to call full `repaint()` so video frame, media timestamp, and progress bar render smoothly across all orientations (portrait, landscape, software rotation, and fullscreen).
+
+4. **`build/NokiaBrowser.jar`:**
+   - Rebuilt with Eclipse ECJ (CLDC 1.1 / MIDP 2.0).
+   - Size: **49,982 bytes** (strictly below the 50,000 bytes budget).
+
+### Verification
+- Simulated J2ME stream reading with Node.js script: successfully received and verified 5/5 valid JPEG frames (`validJPEG=true`) for YouTube and KamTape streams with accurate timestamps (0ms, 125ms, 250ms...).
+- Re-tested gateway server daemon resilience on port 8080.

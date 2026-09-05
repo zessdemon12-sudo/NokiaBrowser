@@ -391,8 +391,8 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                     Image frame = Image.createImage(frameBuffer, 0, len);
                     this.currentVideoFrame = frame;
                     this.mediaTimeUs = (long) curMs * 1000L;
-                    // Efficient dirty region repaint for 240x144 video viewport
-                    repaint(0, 44, getWidth(), 144);
+                    // Full canvas repaint so video, progress bar, and status update cleanly in portrait/landscape
+                    repaint();
                 } catch (Throwable t) {
                     // Frame decode skip
                 }

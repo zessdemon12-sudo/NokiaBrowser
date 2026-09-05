@@ -788,7 +788,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     // Health check
-    if (pathname === '/' || pathname === '/status') {
+    if (pathname === '/' || pathname === '/status' || pathname === '/health') {
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end('Nokia J2ME Modern Gateway & Media Transcoder\nScreen: 240x320 QVGA\nDefault Search: Bing\nKamTape Video: Supported\nStatus: Online\nPort: ' + PORT);
     }
@@ -860,15 +860,17 @@ const server = http.createServer(async (req, res) => {
             'Access-Control-Allow-Origin': '*'
         });
 
-        // Write 8-byte Stream Header: Magic 'NVID' + uint16 width + uint16 height
+        // Write 8-byte Stream Header: Magic 'NVID' (4 bytes) + Total duration ms (4 bytes uint32BE)
         const streamHdr = Buffer.alloc(8);
         streamHdr.write('NVID', 0);
-        streamHdr.writeUInt16BE(parseInt(maxW), 4);
-        streamHdr.writeUInt16BE(parseInt(maxH), 6);
+        const durParam = parsedUrl.searchParams.get('dur');
+        const durMs = durParam ? Math.round(parseFloat(durParam) * 1000) : 0;
+        streamHdr.writeUInt32BE(durMs, 4);
         res.write(streamHdr);
 
         let imgBuffer = Buffer.alloc(0);
         let frameCount = 0;
+        const targetFps = parseFloat(fps) || 8.0;
 
         ffmpeg.stdout.on('data', (chunk) => {
             imgBuffer = Buffer.concat([imgBuffer, chunk]);
@@ -892,9 +894,11 @@ const server = http.createServer(async (req, res) => {
                 const frameData = imgBuffer.subarray(0, frameLen);
                 imgBuffer = imgBuffer.subarray(frameLen);
 
-                // Frame Protocol: 4 bytes length + JPEG bytes
-                const frameHeader = Buffer.alloc(4);
+                // Frame Protocol: [4 bytes length uint32BE][4 bytes curMs timestamp uint32BE][JPEG bytes]
+                const frameHeader = Buffer.alloc(8);
                 frameHeader.writeUInt32BE(frameLen, 0);
+                const curMs = Math.round((sSec * 1000) + (frameCount * (1000.0 / targetFps)));
+                frameHeader.writeUInt32BE(curMs, 4);
 
                 if (!res.writableEnded) {
                     res.write(frameHeader);
@@ -912,7 +916,13 @@ const server = http.createServer(async (req, res) => {
             try { ffmpeg.kill(); } catch (e) {}
         });
         ffmpeg.on('close', () => {
-            if (!res.writableEnded) res.end();
+            if (!res.writableEnded) {
+                // End of stream marker: 4-byte 0 length
+                const eos = Buffer.alloc(4);
+                eos.writeInt32BE(0, 0);
+                res.write(eos);
+                res.end();
+            }
         });
 
         // Feed input to ffmpeg
