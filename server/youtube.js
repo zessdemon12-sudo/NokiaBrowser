@@ -157,15 +157,17 @@ function extractVideoId(targetUrl) {
     try {
         const u = new URL(targetUrl);
         if (u.hostname === 'youtu.be') {
-            return u.pathname.substring(1).split(/[?#&]/)[0];
+            const id = u.pathname.substring(1).split(/[?#&]/)[0];
+            if (id && id.length === 11 && !id.startsWith('UC')) return id;
         }
         if (u.searchParams.has('v')) {
-            return u.searchParams.get('v');
+            const id = u.searchParams.get('v');
+            if (id && id.length === 11 && !id.startsWith('UC')) return id;
         }
-        const m = u.pathname.match(/\/(?:embed|v|shorts)\/([a-zA-Z0-9_-]{11})/);
+        const m = u.pathname.match(/\/(?:embed|v|shorts)\/([a-zA-Z0-9_-]{11})(?:[?#&]|$)/);
         if (m) return m[1];
     } catch (e) {}
-    const directMatch = targetUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/) || targetUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+    const directMatch = targetUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})(?:[&#]|$)/) || targetUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})(?:[?#&]|$)/);
     return directMatch ? directMatch[1] : null;
 }
 
@@ -234,7 +236,9 @@ async function searchYouTube(query, count = 15) {
             try {
                 const item = JSON.parse(line);
                 const id = item.id;
-                if (!id) continue;
+                if (!id || id.length !== 11 || id.startsWith('UC') || item._type === 'channel' || item._type === 'playlist') {
+                    continue;
+                }
                 const title = item.title || `Video ${id}`;
                 const duration = item.duration_string || formatDuration(item.duration);
                 const channel = item.channel || item.uploader || '';
@@ -364,10 +368,16 @@ async function getSubscriptionsFeed(count = 15) {
     // Fallback or Demo mode: Pull recent videos from subscribed channels
     if (videos.length === 0 && auth.subscriptions && auth.subscriptions.length > 0) {
         const channels = auth.subscriptions.slice(0, 5);
-        const fetches = channels.map(c => searchYouTube(c.name, 3));
+        const fetches = channels.map(c => searchYouTube(`${c.name} video`, 3));
         const resLists = await Promise.all(fetches);
         for (const list of resLists) {
-            if (Array.isArray(list)) videos.push(...list);
+            if (Array.isArray(list)) {
+                for (const v of list) {
+                    if (v && v.id && v.id.length === 11 && !v.id.startsWith('UC')) {
+                        videos.push(v);
+                    }
+                }
+            }
         }
         videos = videos.slice(0, count);
     }

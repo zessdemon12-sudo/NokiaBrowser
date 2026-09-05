@@ -928,12 +928,16 @@ const server = http.createServer(async (req, res) => {
         // Feed input to ffmpeg
         if (youtube.isYouTubeUrl(videoUrl)) {
             const ytDlpPath = path.join(__dirname, '..', 'tools', 'yt-dlp');
-            const ytProc = spawn(ytDlpPath, [
+            const ytArgs = [
                 '-o', '-',
-                '-f', '18/worst[ext=mp4]/worst',
-                '--no-warnings',
-                videoUrl
-            ]);
+                '-f', 'bestvideo[height<=360]/worstvideo/160/133/278/18/worst',
+                '--no-warnings'
+            ];
+            if (youtube.hasValidCookies()) {
+                ytArgs.unshift('--cookies', youtube.COOKIES_FILE);
+            }
+            ytArgs.push(videoUrl);
+            const ytProc = spawn(ytDlpPath, ytArgs);
             ytProc.stdout.pipe(ffmpeg.stdin);
             ytProc.on('error', (err) => console.error('[yt-dlp error]:', err.message));
             req.on('close', () => {
@@ -1154,12 +1158,16 @@ const server = http.createServer(async (req, res) => {
         // Feed input to ffmpeg
         if (youtube.isYouTubeUrl(videoUrl)) {
             const ytDlpPath = path.join(__dirname, '..', 'tools', 'yt-dlp');
-            const ytAudioProc = spawn(ytDlpPath, [
+            const ytArgs = [
                 '-o', '-',
                 '-f', 'ba/140/251/bestaudio/worst',
-                '--no-warnings',
-                videoUrl
-            ]);
+                '--no-warnings'
+            ];
+            if (youtube.hasValidCookies()) {
+                ytArgs.unshift('--cookies', youtube.COOKIES_FILE);
+            }
+            ytArgs.push(videoUrl);
+            const ytAudioProc = spawn(ytDlpPath, ytArgs);
             ytAudioProc.stdout.pipe(ffmpeg.stdin);
             ytAudioProc.on('error', (err) => console.error('[yt-dlp audio error]:', err.message));
             req.on('close', () => {

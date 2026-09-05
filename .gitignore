@@ -21,3 +21,6 @@ __pycache__/
 
 # YouTube Auth Cookies
 server/data/youtube_cookies.txt
+
+# Root screenshots
+/*.png

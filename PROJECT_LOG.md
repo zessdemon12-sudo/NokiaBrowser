@@ -583,6 +583,34 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
 
 ---
 
+### Event 020: Fix YouTube Subscriptions Channel-ID Extraction & /video_stream Modern DASH Pipeline
+- **Timestamp**: 2026-09-06T03:38:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Fix `[ Buffering 3GP / Video... ] Status: Stream ended` playback error in KEmulator when launching videos from the YouTube Subscriptions feed.
+- **Root Cause Analysis**:
+  1. **Channel ID Leaking into Video Feed**:
+     - `searchYouTube` and `getSubscriptionsFeed` accepted any non-empty `id`. When querying channel uploads via `ytsearch`, YouTube/yt-dlp returned channel objects (e.g. `UCoL8olX-259lS1N6QPyP4IQ` for Action Retro, length 24) before the channel's actual videos.
+     - As a result, the feed generated video links pointing to `https://www.youtube.com/watch?v=UCoL8olX-259lS1N6QPyP4IQ`. YouTube rejected this non-existent video ID, causing yt-dlp to exit with error and producing 0 video frames (`Stream ended`).
+  2. **Format Specification Error in `/video_stream`**:
+     - In `server/server.js`, `/video_stream` used `-f 18/worst[ext=mp4]/worst`.
+     - Modern YouTube discontinued format 18 (legacy 360p muxed MP4) and muxed MP4s on newer videos, causing `yt-dlp` to fail with `ERROR: Requested format is not available`.
+     - Because `/video_stream` only decodes video frames (audio is played separately via `/video_audio`), it should use `bestvideo[height<=360]/worstvideo/160/133/278/18/worst`.
+- **Architectural Changes**:
+  1. **Strict 11-Character Video ID Validation (`server/youtube.js`)**:
+     - In `extractVideoId`: checks `id.length === 11 && !id.startsWith('UC')`.
+     - In `searchYouTube`: filters `if (!id || id.length !== 11 || id.startsWith('UC') || item._type === 'channel' || item._type === 'playlist') continue;`.
+     - In `getSubscriptionsFeed`: searches `${c.name} video` and strictly filters results to valid 11-character video IDs.
+  2. **Modern Video Format Selection (`server/server.js`)**:
+     - Upgraded `/video_stream` to `-f bestvideo[height<=360]/worstvideo/160/133/278/18/worst`.
+     - Added cookie forwarding (`--cookies COOKIES_FILE`) to both `/video_stream` and `/video_audio`.
+- **Verification**:
+  - Tested `curl -s "http://127.0.0.1:8080/page?url=https://www.youtube.com/feed/subscriptions"`: Verified all entries are real videos (`--OOOEgs_N8`, `X7GT6gUOlmc`, `8emE-QDsM_0`, `z27b40T6lLs`, etc.) with 0 channel IDs.
+  - Tested `/video_stream` with real video `8emE-QDsM_0`: Streamed 50,000+ bytes of JPEG frames smoothly.
+  - Tested `/video_audio` with `8emE-QDsM_0`: Streamed 50,000+ bytes of 48 kbps MP3 audio immediately.
+  - Client binary footprint remained unchanged at **49,923 bytes** (< 50,000 bytes ceiling).
+
+---
+
 ## 4. Keypad Controls Reference (240x320 Nokia QVGA)
 
 ### Browser Navigation Controls
