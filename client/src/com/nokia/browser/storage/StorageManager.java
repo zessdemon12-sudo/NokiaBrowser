@@ -97,6 +97,16 @@ public class StorageManager {
     private int searchEngine = 0; // 0 = Bing, 1 = FrogFind, 2 = KamTape, 3 = YouTube
     private int orientation = 0;  // 0 = Auto, 1 = Portrait (240x320), 2 = Landscape (320x240)
 
+    // SIM and Cellular Network settings
+    private int simSlot = 0;         // 0 = SIM 1, 1 = SIM 2
+    private int networkBearer = 0;   // 0 = Auto, 1 = GPRS, 2 = EDGE, 3 = 3G, 4 = HSDPA, 5 = WiFi
+    private int apnPreset = 0;       // 0 = Auto, 1 = Vodafone, 2 = T-Mobile, 3 = AT&T, 4 = Airtel, 5 = Jio, 6 = Orange, 7 = Custom
+    private String customApn = "";
+    private String customProxy = "";
+    private boolean dataSaver = false;
+    private long totalMobileBytes = 0;
+    private long unsavedMobileBytes = 0;
+
     public int getSearchEngine() { return searchEngine; }
     public void setSearchEngine(int engine) {
         this.searchEngine = engine;
@@ -106,6 +116,61 @@ public class StorageManager {
     public int getOrientation() { return orientation; }
     public void setOrientation(int o) {
         this.orientation = o;
+        saveSettings();
+    }
+
+    public int getSimSlot() { return simSlot; }
+    public void setSimSlot(int slot) {
+        this.simSlot = slot;
+        saveSettings();
+    }
+
+    public int getNetworkBearer() { return networkBearer; }
+    public void setNetworkBearer(int b) {
+        this.networkBearer = b;
+        saveSettings();
+    }
+
+    public int getApnPreset() { return apnPreset; }
+    public void setApnPreset(int p) {
+        this.apnPreset = p;
+        saveSettings();
+    }
+
+    public String getCustomApn() { return customApn; }
+    public void setCustomApn(String a) {
+        this.customApn = (a == null) ? "" : a;
+        saveSettings();
+    }
+
+    public String getCustomProxy() { return customProxy; }
+    public void setCustomProxy(String p) {
+        this.customProxy = (p == null) ? "" : p;
+        saveSettings();
+    }
+
+    public boolean isDataSaver() { return dataSaver; }
+    public void setDataSaver(boolean ds) {
+        this.dataSaver = ds;
+        saveSettings();
+    }
+
+    public long getTotalMobileBytes() { return totalMobileBytes; }
+
+    public synchronized void addMobileBytes(int count) {
+        if (count <= 0) return;
+        totalMobileBytes += count;
+        unsavedMobileBytes += count;
+        // Batch flush every ~32 KB to avoid excessive RMS writes
+        if (unsavedMobileBytes >= 32768) {
+            unsavedMobileBytes = 0;
+            saveSettings();
+        }
+    }
+
+    public void resetMobileBytes() {
+        totalMobileBytes = 0;
+        unsavedMobileBytes = 0;
         saveSettings();
     }
 
@@ -127,6 +192,27 @@ public class StorageManager {
                 if (rs.getNumRecords() >= 5) {
                     byte[] b5 = rs.getRecord(5);
                     orientation = Integer.parseInt(new String(b5));
+                }
+                if (rs.getNumRecords() >= 6) {
+                    simSlot = Integer.parseInt(new String(rs.getRecord(6)));
+                }
+                if (rs.getNumRecords() >= 7) {
+                    networkBearer = Integer.parseInt(new String(rs.getRecord(7)));
+                }
+                if (rs.getNumRecords() >= 8) {
+                    apnPreset = Integer.parseInt(new String(rs.getRecord(8)));
+                }
+                if (rs.getNumRecords() >= 9) {
+                    customApn = new String(rs.getRecord(9));
+                }
+                if (rs.getNumRecords() >= 10) {
+                    customProxy = new String(rs.getRecord(10));
+                }
+                if (rs.getNumRecords() >= 11) {
+                    dataSaver = "1".equals(new String(rs.getRecord(11)));
+                }
+                if (rs.getNumRecords() >= 12) {
+                    totalMobileBytes = Long.parseLong(new String(rs.getRecord(12)));
                 }
             } else {
                 saveSettings();
@@ -150,11 +236,25 @@ public class StorageManager {
             byte[] b3 = String.valueOf(fontSize).getBytes();
             byte[] b4 = String.valueOf(searchEngine).getBytes();
             byte[] b5 = String.valueOf(orientation).getBytes();
+            byte[] b6 = String.valueOf(simSlot).getBytes();
+            byte[] b7 = String.valueOf(networkBearer).getBytes();
+            byte[] b8 = String.valueOf(apnPreset).getBytes();
+            byte[] b9 = (customApn != null ? customApn : "").getBytes();
+            byte[] b10 = (customProxy != null ? customProxy : "").getBytes();
+            byte[] b11 = (dataSaver ? "1" : "0").getBytes();
+            byte[] b12 = String.valueOf(totalMobileBytes).getBytes();
             rs.addRecord(b1, 0, b1.length);
             rs.addRecord(b2, 0, b2.length);
             rs.addRecord(b3, 0, b3.length);
             rs.addRecord(b4, 0, b4.length);
             rs.addRecord(b5, 0, b5.length);
+            rs.addRecord(b6, 0, b6.length);
+            rs.addRecord(b7, 0, b7.length);
+            rs.addRecord(b8, 0, b8.length);
+            rs.addRecord(b9, 0, b9.length);
+            rs.addRecord(b10, 0, b10.length);
+            rs.addRecord(b11, 0, b11.length);
+            rs.addRecord(b12, 0, b12.length);
         } catch (Exception e) {
         } finally {
             closeRs(rs);

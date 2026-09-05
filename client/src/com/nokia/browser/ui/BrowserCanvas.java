@@ -3,6 +3,7 @@ package com.nokia.browser.ui;
 import com.nokia.browser.BrowserMIDlet;
 import com.nokia.browser.model.PageElement;
 import com.nokia.browser.model.WebPage;
+import com.nokia.browser.net.SimManager;
 import com.nokia.browser.storage.StorageManager;
 
 import javax.microedition.lcdui.Canvas;
@@ -746,6 +747,54 @@ public class BrowserCanvas extends Canvas {
             g.drawString("W", 4, 3, Graphics.TOP | Graphics.LEFT);
         }
 
+        // Cellular & SIM Status Cluster on right
+        SimManager sim = (midlet != null && midlet.getNetwork() != null) ? midlet.getNetwork().getSimManager() : null;
+
+        // 1. Signal Bars (4 vertical stepped bars)
+        int bars = (sim != null) ? sim.getSignalBars() : 4;
+        int sigX = w - 16;
+        int baseBottomY = headerH - 5;
+        for (int b = 1; b <= 4; b++) {
+            int barH = b * 2 + 1; // 3, 5, 7, 9
+            int barY = baseBottomY - barH;
+            int bx = sigX + (b - 1) * 3;
+            if (b <= bars) {
+                g.setColor(0x22C55E); // active green
+            } else {
+                g.setColor(0x334155); // inactive dark slate
+            }
+            g.fillRect(bx, barY, 2, barH);
+        }
+
+        // 2. Bearer Badge ([G], [E], [3G], [H], [W])
+        String bearer = (sim != null) ? sim.getBearerBadge() : "E";
+        boolean active = (sim != null && (sim.isDataActive() || isLoading));
+        int badgeW = (bearer.length() > 1) ? 17 : 12;
+        int badgeX = sigX - badgeW - 4;
+        int badgeY = 3;
+        int badgeH = headerH - 6;
+
+        g.setColor(active ? 0x0369A1 : 0x1E293B);
+        g.fillRect(badgeX, badgeY, badgeW, badgeH);
+        g.setColor(active ? 0x38BDF8 : 0x64748B);
+        g.drawRect(badgeX, badgeY, badgeW, badgeH);
+        g.setFont(smallBoldFont);
+        g.setColor(active ? 0x38BDF8 : 0xE2E8F0);
+        g.drawString(bearer, badgeX + badgeW / 2, badgeY + 1, Graphics.HCENTER | Graphics.TOP);
+
+        // 3. SIM Badge (S1 / S2 or R for Roaming)
+        String simBadge = (sim != null && sim.isRoaming()) ? "R" : ((sim != null) ? sim.getSimBadge() : "S1");
+        int simW = (simBadge.length() > 1) ? 15 : 10;
+        int simX = badgeX - simW - 3;
+        g.setColor(0x1E293B);
+        g.fillRect(simX, badgeY, simW, badgeH);
+        g.setColor(0x475569);
+        g.drawRect(simX, badgeY, simW, badgeH);
+        g.setColor((sim != null && sim.isRoaming()) ? 0xF59E0B : 0x94A3B8);
+        g.drawString(simBadge, simX + simW / 2, badgeY + 1, Graphics.HCENTER | Graphics.TOP);
+
+        // 4. Page Title / Status text with dynamic truncation
+        int maxTitleW = simX - 22;
         g.setColor(0xF8FAFC);
         g.setFont(smallFont);
 
@@ -755,8 +804,11 @@ public class BrowserCanvas extends Canvas {
         } else {
             headerText = (page != null && page.title != null) ? page.title : "Nokia Browser";
         }
-        if (headerText.length() > 24) {
-            headerText = headerText.substring(0, 22) + "...";
+        while (headerText.length() > 4 && smallFont.stringWidth(headerText) > maxTitleW) {
+            headerText = headerText.substring(0, headerText.length() - 2);
+        }
+        if (smallFont.stringWidth(headerText) > maxTitleW && headerText.length() > 3) {
+            headerText = headerText.substring(0, headerText.length() - 1);
         }
         g.drawString(headerText, 18, 3, Graphics.TOP | Graphics.LEFT);
 

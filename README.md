@@ -26,10 +26,16 @@ A high-performance modern web browser engineered specifically for vintage **Noki
   - **Key 0:** Instant Bookmarks dialog.
   - **Key \*:** Toggle Fullscreen mode (or fullscreen video in media player).
   - **Key #:** Quick URL entry & Search bar.
-  - **Left Softkey:** Options Menu (Search, Bookmarks, History, Toggle Landscape, Settings).
+  - **Left Softkey:** Options Menu (Search, Bookmarks, History, Toggle Landscape, SIM & Mobile Network, Settings).
   - **Right Softkey:** Back / Exit.
-- **Persistent Storage (RMS):** Bookmarks, history, search engines, and orientation saved to phone memory across restarts.
-- **Ultra-Lightweight Footprint:** The compiled client JAR is only **~42 KB**, preserving maximum Java heap RAM for smooth page rendering (comfortably under the 50 KB ceiling).
+- **SIM Card & Mobile Network Support:**
+  - **Dual-SIM Slot Selection:** Switch active data SIM between `SIM 1 (Primary)` and `SIM 2 (Secondary)` on dual-SIM Nokia S40 models (e.g. C2-00, Asha 200, Asha 305).
+  - **Network Bearer Modes:** Negotiate or configure connection bearers: `Auto`, `2G (GPRS)`, `2.5G (EDGE)`, `3G (WCDMA)`, `3.5G (HSDPA)`, `WiFi / WLAN`.
+  - **Carrier APN Profiles:** Built-in APN profiles for Vodafone, T-Mobile, AT&T, Airtel, Jio, and Orange, plus custom APN and WAP proxy host:port entry.
+  - **Authentic Cellular Status Bar:** Right-aligned 4-bar vertical signal meter, dynamic bearer badge (`[G]`, `[E]`, `[3G]`, `[H]`, `[W]`), SIM slot badge (`[S1]`, `[S2]`), and roaming indicator (`[R]`).
+  - **Mobile Data Usage Tracking & Data Saver:** In-app data accounting (Session KB, Total MB persisted in RMS) and Max Data Saver mode (reduces image widths to 160px to preserve cellular data caps).
+- **Persistent Storage (RMS):** Bookmarks, history, search engines, orientation, SIM slots, APNs, and data usage saved across restarts.
+- **Ultra-Lightweight Footprint:** The compiled client JAR is only **~48 KB**, preserving maximum Java heap RAM for smooth page rendering (comfortably under the 50 KB ceiling).
 
 ---
 

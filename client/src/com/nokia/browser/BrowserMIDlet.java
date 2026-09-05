@@ -3,6 +3,7 @@ package com.nokia.browser;
 import com.nokia.browser.media.MediaPlayerCanvas;
 import com.nokia.browser.model.WebPage;
 import com.nokia.browser.net.NetworkManager;
+import com.nokia.browser.net.SimManager;
 import com.nokia.browser.storage.StorageManager;
 import com.nokia.browser.ui.BrowserCanvas;
 
@@ -26,6 +27,8 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     private Command cmdBack;
     private Command cmdSelect;
     private Command cmdDelete;
+    private Command cmdSimInfo;
+    private Command cmdResetData;
 
     // UI Dialogs
     private TextBox addressBox;
@@ -43,6 +46,15 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     private ChoiceGroup choiceSearchEngine;
     private ChoiceGroup choiceOrientation;
 
+    // SIM & Mobile Network UI
+    private Form simForm;
+    private ChoiceGroup choiceSimSlot;
+    private ChoiceGroup choiceBearer;
+    private ChoiceGroup choiceApn;
+    private TextField txtCustomApn;
+    private TextField txtCustomProxy;
+    private ChoiceGroup choiceDataSaver;
+
     public static BrowserMIDlet instance;
     private boolean isStarted = false;
 
@@ -55,6 +67,8 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         cmdBack = new Command("Back", Command.BACK, 2);
         cmdSelect = new Command("Select", Command.ITEM, 1);
         cmdDelete = new Command("Delete", Command.ITEM, 3);
+        cmdSimInfo = new Command("SIM Info", Command.SCREEN, 2);
+        cmdResetData = new Command("Reset Counter", Command.SCREEN, 3);
     }
 
     public void startApp() {
@@ -227,6 +241,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         optionsList.append("History", null);
         optionsList.append("Reload Page", null);
         optionsList.append("Toggle Landscape", null);
+        optionsList.append("SIM & Mobile Network", null);
         optionsList.append("Settings", null);
         optionsList.append("About", null);
         optionsList.append("Exit", null);
@@ -317,14 +332,93 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                 "Modern Nokia J2ME Browser\n" +
                 "Resolution: 240x320 QVGA\n" +
                 "Profile: MIDP 2.0 / CLDC 1.1\n" +
+                "SIM & Network APN Stack\n" +
                 "HTTPS TLS 1.3 / 1.2 Support\n" +
                 "Audio/Video Media Support\n" +
-                "YouTube & KamTape Video Support\n" +
+                "YouTube & KamTape Support\n" +
                 "FrogFind & Bing Search\n" +
                 "Designed for Nokia S40/S60",
                 null, AlertType.INFO);
         about.setTimeout(Alert.FOREVER);
         display.setCurrent(about, canvas);
+    }
+
+    public void showSimNetworkSettings() {
+        simForm = new Form("SIM & Mobile Network");
+
+        choiceSimSlot = new ChoiceGroup("Active SIM Slot:", ChoiceGroup.EXCLUSIVE);
+        choiceSimSlot.append("SIM 1 (Primary)", null);
+        choiceSimSlot.append("SIM 2 (Secondary)", null);
+        choiceSimSlot.setSelectedIndex(storage.getSimSlot(), true);
+        simForm.append(choiceSimSlot);
+
+        choiceBearer = new ChoiceGroup("Network Bearer:", ChoiceGroup.EXCLUSIVE);
+        choiceBearer.append("Auto (Device Default)", null);
+        choiceBearer.append("2G (GPRS)", null);
+        choiceBearer.append("2.5G (EDGE)", null);
+        choiceBearer.append("3G (WCDMA)", null);
+        choiceBearer.append("3.5G (HSDPA)", null);
+        choiceBearer.append("WiFi / WLAN", null);
+        choiceBearer.setSelectedIndex(storage.getNetworkBearer(), true);
+        simForm.append(choiceBearer);
+
+        choiceApn = new ChoiceGroup("Carrier APN Profile:", ChoiceGroup.EXCLUSIVE);
+        choiceApn.append("Auto (Default Internet)", null);
+        choiceApn.append("Vodafone (live.vodafone.com)", null);
+        choiceApn.append("T-Mobile (fast.t-mobile.com)", null);
+        choiceApn.append("AT&T (phone)", null);
+        choiceApn.append("Airtel (airtelgprs.com)", null);
+        choiceApn.append("Jio 4G/5G (jionet)", null);
+        choiceApn.append("Orange (orange)", null);
+        choiceApn.append("Custom APN...", null);
+        choiceApn.setSelectedIndex(storage.getApnPreset(), true);
+        simForm.append(choiceApn);
+
+        txtCustomApn = new TextField("Custom APN:", storage.getCustomApn(), 60, TextField.ANY);
+        simForm.append(txtCustomApn);
+
+        txtCustomProxy = new TextField("Custom Proxy (IP:Port):", storage.getCustomProxy(), 60, TextField.ANY);
+        simForm.append(txtCustomProxy);
+
+        choiceDataSaver = new ChoiceGroup("Mobile Data Saver:", ChoiceGroup.EXCLUSIVE);
+        choiceDataSaver.append("Normal (Standard Images)", null);
+        choiceDataSaver.append("Max Data Saver (Cellular)", null);
+        choiceDataSaver.setSelectedIndex(storage.isDataSaver() ? 1 : 0, true);
+        simForm.append(choiceDataSaver);
+
+        simForm.addCommand(cmdOk);
+        simForm.addCommand(cmdSimInfo);
+        simForm.addCommand(cmdCancel);
+        simForm.setCommandListener(this);
+        display.setCurrent(simForm);
+    }
+
+    public void showSimInfoDialog() {
+        SimManager sim = network.getSimManager();
+        StringBuffer sb = new StringBuffer();
+        sb.append("SIM Slot: ").append(sim.getSimBadge()).append("\n");
+        sb.append("Operator: ").append(sim.getDetectedOperator()).append("\n");
+        sb.append("MCC-MNC: ").append(sim.getDetectedCountryCode()).append("-").append(sim.getDetectedNetworkCode()).append("\n");
+        sb.append("Bearer: ").append(sim.getBearerName()).append("\n");
+        sb.append("APN: ").append(sim.getApnName()).append("\n");
+        if (sim.getApnProxy().length() > 0) {
+            sb.append("Proxy: ").append(sim.getApnProxy()).append("\n");
+        }
+        sb.append("Signal: ").append(sim.getSignalBars()).append(" / 4 bars\n");
+        sb.append("Roaming: ").append(sim.isRoaming() ? "Yes (Roaming)" : "No (Home)").append("\n");
+        sb.append("IMEI: ").append(sim.getMaskedImei()).append("\n");
+        sb.append("IMSI: ").append(sim.getMaskedImsi()).append("\n");
+        sb.append("--------------------\n");
+        sb.append("Session Data: ").append(SimManager.formatBytes(sim.getSessionBytes())).append("\n");
+        sb.append("Total Mobile: ").append(SimManager.formatBytes(sim.getTotalBytes()));
+
+        Alert info = new Alert("SIM & Network Info", sb.toString(), null, AlertType.INFO);
+        info.setTimeout(Alert.FOREVER);
+        info.addCommand(cmdResetData);
+        info.addCommand(cmdBack);
+        info.setCommandListener(this);
+        Displayable next = (simForm != null) ? (Displayable) simForm : (Displayable) canvas;
+        display.setCurrent(info, next);
     }
 
     public void commandAction(Command c, Displayable d) {
@@ -335,43 +429,29 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                 if (target != null) {
                     target = target.trim();
                     String lower = target.toLowerCase();
-                    if (lower.equals("search https://www.youtube.com/") || lower.equals("search https://www.youtube.com") ||
-                        lower.equals("search http://www.youtube.com/") || lower.equals("search http://www.youtube.com") ||
-                        lower.equals("search:https://www.youtube.com/") || lower.equals("search:https://www.youtube.com") ||
-                        lower.equals("search https://youtube.com/") || lower.equals("search https://youtube.com") ||
-                        lower.equals("search:https://youtube.com/") || lower.equals("search:https://youtube.com") ||
-                        lower.equals("search:youtube") || lower.equals("youtube") || lower.equals("search youtube") ||
-                        lower.equals("search youtube.com") || lower.equals("search www.youtube.com") ||
-                        lower.equals("search:www.youtube.com") || lower.equals("search:youtube.com") ||
-                        lower.equals("https://www.youtube.com/search") || lower.equals("https://www.youtube.com/search/") ||
-                        lower.equals("http://www.youtube.com/search") || lower.equals("http://www.youtube.com/search/") ||
-                        lower.equals("www.youtube.com/search") || lower.equals("youtube.com/search") ||
-                        lower.equals("https://www.youtube.com/results") || lower.equals("http://www.youtube.com/results") ||
-                        lower.equals("www.youtube.com/results") || lower.equals("youtube.com/results") ||
-                        lower.equals("m.youtube.com/search") || lower.equals("m.youtube.com/results") || lower.equals("m.youtube.com")) {
+
+                    // Prefix normalization for omnibox queries
+                    String norm = lower;
+                    if (norm.startsWith("search:")) norm = norm.substring(7).trim();
+                    else if (norm.startsWith("search ")) norm = norm.substring(7).trim();
+                    if (norm.startsWith("https://")) norm = norm.substring(8);
+                    else if (norm.startsWith("http://")) norm = norm.substring(7);
+                    if (norm.startsWith("www.")) norm = norm.substring(4);
+                    else if (norm.startsWith("m.")) norm = norm.substring(2);
+
+                    // 1. YouTube routing
+                    if (norm.equals("youtube") || norm.equals("youtube.com") || norm.equals("youtube.com/") ||
+                        norm.equals("youtube.com/search") || norm.equals("youtube.com/results") || norm.equals("yt")) {
                         showYouTubeSearchDialog();
                         return;
                     }
-                    if (lower.startsWith("search https://www.youtube.com/ ") || lower.startsWith("search https://www.youtube.com ") ||
-                        lower.startsWith("search http://www.youtube.com/ ") || lower.startsWith("search http://www.youtube.com ") ||
-                        lower.startsWith("search https://youtube.com/ ") || lower.startsWith("search https://youtube.com ") ||
-                        lower.startsWith("search:https://www.youtube.com/ ") || lower.startsWith("search:https://www.youtube.com ") ||
-                        lower.startsWith("search www.youtube.com ") || lower.startsWith("search youtube.com ") ||
-                        lower.startsWith("search youtube ") || lower.startsWith("youtube ") || lower.startsWith("yt ")) {
-                        String q = target;
-                        if (lower.startsWith("search https://www.youtube.com/ ")) q = target.substring(32);
-                        else if (lower.startsWith("search https://www.youtube.com ")) q = target.substring(31);
-                        else if (lower.startsWith("search http://www.youtube.com/ ")) q = target.substring(31);
-                        else if (lower.startsWith("search http://www.youtube.com ")) q = target.substring(30);
-                        else if (lower.startsWith("search https://youtube.com/ ")) q = target.substring(28);
-                        else if (lower.startsWith("search https://youtube.com ")) q = target.substring(27);
-                        else if (lower.startsWith("search:https://www.youtube.com/ ")) q = target.substring(33);
-                        else if (lower.startsWith("search:https://www.youtube.com ")) q = target.substring(32);
-                        else if (lower.startsWith("search www.youtube.com ")) q = target.substring(23);
-                        else if (lower.startsWith("search youtube.com ")) q = target.substring(19);
-                        else if (lower.startsWith("search youtube ")) q = target.substring(15);
-                        else if (lower.startsWith("youtube ")) q = target.substring(8);
-                        else if (lower.startsWith("yt ")) q = target.substring(3);
+                    if (norm.startsWith("youtube ") || norm.startsWith("yt ") ||
+                        norm.startsWith("youtube.com ") || norm.startsWith("youtube.com/results?search_query=")) {
+                        String q;
+                        if (norm.startsWith("youtube.com/results?search_query=")) q = norm.substring(33);
+                        else if (norm.startsWith("youtube.com ")) q = norm.substring(12);
+                        else if (norm.startsWith("youtube ")) q = norm.substring(8);
+                        else q = norm.substring(3);
                         q = q.trim();
                         if (q.length() > 0) {
                             loadUrl("https://www.youtube.com/results?search_query=" + com.nokia.browser.net.NetworkManager.urlEncode(q), true);
@@ -380,32 +460,20 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         }
                         return;
                     }
-                    if (lower.equals("search https://www.kamtape.com/") || lower.equals("search https://www.kamtape.com") ||
-                        lower.equals("search http://www.kamtape.com/") || lower.equals("search http://www.kamtape.com") ||
-                        lower.equals("search:https://www.kamtape.com/") || lower.equals("search:https://www.kamtape.com") ||
-                        lower.equals("search:kamtape") || lower.equals("kamtape") || lower.equals("search kamtape") ||
-                        lower.equals("search www.kamtape.com") || lower.equals("search kamtape.com") ||
-                        lower.equals("https://www.kamtape.com/search") || lower.equals("http://www.kamtape.com/search") ||
-                        lower.equals("www.kamtape.com/search") || lower.equals("kamtape.com/search") ||
-                        lower.equals("https://www.kamtape.com/results") || lower.equals("http://www.kamtape.com/results") ||
-                        lower.equals("www.kamtape.com/results") || lower.equals("kamtape.com/results")) {
+
+                    // 2. KamTape routing
+                    if (norm.equals("kamtape") || norm.equals("kamtape.com") || norm.equals("kamtape.com/") ||
+                        norm.equals("kamtape.com/search") || norm.equals("kamtape.com/results") || norm.equals("kt")) {
                         showKamTapeSearchDialog();
                         return;
                     }
-                    if (lower.startsWith("search https://www.kamtape.com/ ") || lower.startsWith("search https://www.kamtape.com ") ||
-                        lower.startsWith("search http://www.kamtape.com/ ") || lower.startsWith("search http://www.kamtape.com ") ||
-                        lower.startsWith("search www.kamtape.com ") || lower.startsWith("search kamtape.com ") ||
-                        lower.startsWith("search kamtape ") || lower.startsWith("kamtape ") || lower.startsWith("kt ")) {
-                        String q = target;
-                        if (lower.startsWith("search https://www.kamtape.com/ ")) q = target.substring(32);
-                        else if (lower.startsWith("search https://www.kamtape.com ")) q = target.substring(31);
-                        else if (lower.startsWith("search http://www.kamtape.com/ ")) q = target.substring(31);
-                        else if (lower.startsWith("search http://www.kamtape.com ")) q = target.substring(30);
-                        else if (lower.startsWith("search www.kamtape.com ")) q = target.substring(23);
-                        else if (lower.startsWith("search kamtape.com ")) q = target.substring(19);
-                        else if (lower.startsWith("search kamtape ")) q = target.substring(15);
-                        else if (lower.startsWith("kamtape ")) q = target.substring(8);
-                        else if (lower.startsWith("kt ")) q = target.substring(3);
+                    if (norm.startsWith("kamtape ") || norm.startsWith("kt ") ||
+                        norm.startsWith("kamtape.com ") || norm.startsWith("kamtape.com/results?search_query=")) {
+                        String q;
+                        if (norm.startsWith("kamtape.com/results?search_query=")) q = norm.substring(33);
+                        else if (norm.startsWith("kamtape.com ")) q = norm.substring(12);
+                        else if (norm.startsWith("kamtape ")) q = norm.substring(8);
+                        else q = norm.substring(3);
                         q = q.trim();
                         if (q.length() > 0) {
                             loadUrl("https://www.kamtape.com/results?search_query=" + com.nokia.browser.net.NetworkManager.urlEncode(q), true);
@@ -414,13 +482,15 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         }
                         return;
                     }
-                    if (lower.equals("search:frogfind") || lower.equals("frogfind") || lower.equals("search frogfind")) {
+
+                    // 3. FrogFind routing
+                    if (norm.equals("frogfind") || norm.equals("frogfind.com") || norm.equals("ff")) {
                         showFrogFindSearchDialog();
                         return;
                     }
-                    if (lower.startsWith("frogfind ") || lower.startsWith("ff ")) {
-                        int sp = target.indexOf(' ');
-                        String q = target.substring(sp + 1).trim();
+                    if (norm.startsWith("frogfind ") || norm.startsWith("ff ")) {
+                        int sp = norm.indexOf(' ');
+                        String q = norm.substring(sp + 1).trim();
                         loadUrl("https://www.frogfind.com/?q=" + com.nokia.browser.net.NetworkManager.urlEncode(q), true);
                         return;
                     }
@@ -501,9 +571,10 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                     }
                 }
                 else if (idx == 9) toggleOrientation();
-                else if (idx == 10) showSettings();
-                else if (idx == 11) showAbout();
-                else if (idx == 12) exitBrowser();
+                else if (idx == 10) showSimNetworkSettings();
+                else if (idx == 11) showSettings();
+                else if (idx == 12) showAbout();
+                else if (idx == 13) exitBrowser();
             } else if (c == cmdBack) {
                 display.setCurrent(canvas);
             }
@@ -533,6 +604,21 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
             } else if (c == cmdBack) {
                 display.setCurrent(canvas);
             }
+        } else if (d == simForm) {
+            if (c == cmdOk) {
+                storage.setSimSlot(choiceSimSlot.getSelectedIndex());
+                storage.setNetworkBearer(choiceBearer.getSelectedIndex());
+                storage.setApnPreset(choiceApn.getSelectedIndex());
+                storage.setCustomApn(txtCustomApn.getString());
+                storage.setCustomProxy(txtCustomProxy.getString());
+                storage.setDataSaver(choiceDataSaver.getSelectedIndex() == 1);
+                canvas.repaint();
+                display.setCurrent(canvas);
+            } else if (c == cmdSimInfo) {
+                showSimInfoDialog();
+            } else if (c == cmdCancel) {
+                display.setCurrent(canvas);
+            }
         } else if (d == settingsForm) {
             if (c == cmdOk) {
                 storage.setGatewayUrl(txtGatewayUrl.getString());
@@ -548,6 +634,13 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
             } else if (c == cmdCancel) {
                 display.setCurrent(canvas);
             }
+        }
+
+        if (c == cmdResetData) {
+            network.getSimManager().resetTotalBytes();
+            Alert a = new Alert("Counter Reset", "Mobile data counter has been reset to 0.", null, AlertType.CONFIRMATION);
+            a.setTimeout(2000);
+            display.setCurrent(a, canvas);
         }
     }
 }

@@ -22,9 +22,15 @@ public class NetworkManager {
     }
 
     private StorageManager storage;
+    private SimManager simManager;
 
     public NetworkManager(StorageManager storage) {
         this.storage = storage;
+        this.simManager = new SimManager(storage);
+    }
+
+    public SimManager getSimManager() {
+        return simManager;
     }
 
     /**
@@ -69,68 +75,101 @@ public class NetworkManager {
         executeFetch(requestUrl, targetUrl, callback);
     }
 
+    private void applyCellularHeaders(HttpConnection conn) {
+        try {
+            conn.setRequestProperty("User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");
+            conn.setRequestProperty("X-Nokia-SIM", String.valueOf(simManager.getActiveSim() + 1));
+            conn.setRequestProperty("X-Nokia-Bearer", simManager.getBearerBadge());
+            conn.setRequestProperty("X-Nokia-Operator", simManager.getDetectedOperator());
+            conn.setRequestProperty("X-Nokia-APN", simManager.getApnName());
+            conn.setRequestProperty("X-Nokia-Signal", String.valueOf(simManager.getSignalBars()));
+            if (simManager.isDataSaver()) {
+                conn.setRequestProperty("X-Nokia-Data-Saver", "1");
+            }
+        } catch (Exception e) {}
+    }
+
     private void executeFetch(String requestUrl, String originalUrl, NetworkCallback callback) {
         HttpConnection conn = null;
         InputStream is = null;
-        try {
-            callback.onLoading("Connecting...");
-            conn = (HttpConnection) Connector.open(requestUrl, Connector.READ, true);
-            conn.setRequestMethod(HttpConnection.GET);
-            conn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
+        boolean success = false;
+        Exception lastException = null;
 
-            int responseCode = conn.getResponseCode();
-            if (responseCode != HttpConnection.HTTP_OK) {
-                callback.onError("HTTP Error: " + responseCode);
-                return;
-            }
+        for (int attempt = 1; attempt <= 2 && !success; attempt++) {
+            try {
+                if (attempt == 1) {
+                    callback.onLoading("Connecting (" + simManager.getSimBadge() + ": " + simManager.getBearerBadge() + ")...");
+                } else {
+                    callback.onLoading("Retrying on " + simManager.getSimBadge() + "...");
+                    try { Thread.sleep(400); } catch (Exception ex) {}
+                }
 
-            callback.onLoading("Receiving page...");
-            is = conn.openInputStream();
+                conn = (HttpConnection) Connector.open(requestUrl, Connector.READ, true);
+                conn.setRequestMethod(HttpConnection.GET);
+                applyCellularHeaders(conn);
 
-            WebPage page = new WebPage();
-            page.url = originalUrl;
+                int responseCode = conn.getResponseCode();
+                if (responseCode != HttpConnection.HTTP_OK) {
+                    callback.onError("HTTP Error: " + responseCode);
+                    return;
+                }
 
-            // Read lines using 2048-byte block buffer to eliminate per-byte socket syscalls
-            byte[] netBuf = new byte[2048];
-            ByteArrayOutputStream lineBuffer = new ByteArrayOutputStream(256);
-            int bytesRead;
-            while ((bytesRead = is.read(netBuf)) != -1) {
-                for (int i = 0; i < bytesRead; i++) {
-                    byte b = netBuf[i];
-                    if (b == '\n') {
-                        byte[] lineBytes = lineBuffer.toByteArray();
-                        lineBuffer.reset();
-                        String line = decodeUtf8(lineBytes).trim();
-                        if (line.length() > 0) {
-                            parseLine(line, page);
+                callback.onLoading("Receiving page (" + simManager.getBearerBadge() + ")...");
+                is = conn.openInputStream();
+
+                WebPage page = new WebPage();
+                page.url = originalUrl;
+
+                // Read lines using 2048-byte block buffer to eliminate per-byte socket syscalls
+                byte[] netBuf = new byte[2048];
+                ByteArrayOutputStream lineBuffer = new ByteArrayOutputStream(256);
+                int bytesRead;
+                while ((bytesRead = is.read(netBuf)) != -1) {
+                    simManager.recordBytes(bytesRead);
+                    for (int i = 0; i < bytesRead; i++) {
+                        byte b = netBuf[i];
+                        if (b == '\n') {
+                            byte[] lineBytes = lineBuffer.toByteArray();
+                            lineBuffer.reset();
+                            String line = decodeUtf8(lineBytes).trim();
+                            if (line.length() > 0) {
+                                parseLine(line, page);
+                            }
+                        } else if (b != '\r') {
+                            lineBuffer.write(b);
                         }
-                    } else if (b != '\r') {
-                        lineBuffer.write(b);
                     }
                 }
-            }
 
-            if (lineBuffer.size() > 0) {
-                String line = decodeUtf8(lineBuffer.toByteArray()).trim();
-                if (line.length() > 0) {
-                    parseLine(line, page);
+                if (lineBuffer.size() > 0) {
+                    String line = decodeUtf8(lineBuffer.toByteArray()).trim();
+                    if (line.length() > 0) {
+                        parseLine(line, page);
+                    }
+                }
+
+                // Record to history
+                storage.addHistory(page.url);
+
+                success = true;
+                callback.onPageLoaded(page);
+
+            } catch (Exception e) {
+                lastException = e;
+            } finally {
+                if (is != null) {
+                    try { is.close(); } catch (Exception e) {}
+                    is = null;
+                }
+                if (conn != null) {
+                    try { conn.close(); } catch (Exception e) {}
+                    conn = null;
                 }
             }
+        }
 
-            // Record to history
-            storage.addHistory(page.url);
-
-            callback.onPageLoaded(page);
-
-        } catch (Exception e) {
-            callback.onError("Connection failed: " + e.getMessage());
-        } finally {
-            if (is != null) {
-                try { is.close(); } catch (Exception e) {}
-            }
-            if (conn != null) {
-                try { conn.close(); } catch (Exception e) {}
-            }
+        if (!success && lastException != null) {
+            callback.onError("Cellular error (" + simManager.getBearerBadge() + "): " + lastException.getMessage());
         }
     }
 
@@ -195,7 +234,7 @@ public class NetworkManager {
         try {
             conn = (HttpConnection) Connector.open(imageUrl, Connector.READ, true);
             conn.setRequestMethod(HttpConnection.GET);
-            conn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
+            applyCellularHeaders(conn);
             int responseCode = conn.getResponseCode();
             if (responseCode != HttpConnection.HTTP_OK) {
                 return null;
@@ -205,6 +244,7 @@ public class NetworkManager {
             byte[] buf = new byte[2048];
             int n;
             while ((n = is.read(buf)) != -1) {
+                simManager.recordBytes(n);
                 baos.write(buf, 0, n);
             }
             byte[] data = baos.toByteArray();

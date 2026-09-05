@@ -48,6 +48,10 @@ MIDlet-Vendor: Antigravity
 MIDlet-Version: 1.0.0
 MicroEdition-Configuration: CLDC-1.1
 MicroEdition-Profile: MIDP-2.0
+Nokia-MIDlet-Dual-SIM-Support: true
+Nokia-MIDlet-Auto-Select-SIM: 1
+Nokia-MIDlet-Network-Access: gprs
+MIDlet-Permissions: javax.microedition.io.Connector.http
 MIDlet-Jar-URL: NokiaBrowser.jar
 MIDlet-Jar-Size: $JAR_SIZE
 JAD_EOF

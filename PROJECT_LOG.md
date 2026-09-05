@@ -361,6 +361,82 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
   - Tested MicroEmulator launch in native 320x240 landscape mode (`--resizableDevice 320 240`).
   - Tested MicroEmulator launch in 240x320 portrait mode (`--resizableDevice 240 320`).
 
+### Event 015: SIM Card & Mobile Network Support (Nokia S40 / S60 Dual-SIM, APN Profiles & Cellular Telemetry)
+- **Timestamp**: 2026-09-06T00:55:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Provide native SIM card, dual-SIM slot selection, carrier APN management, cellular bearer negotiation, authentic status bar signal & bearer meters, mobile data accounting, and bandwidth optimization.
+- **Architectural Changes**:
+  1. **SIM & Cellular Hardware Engine (`SimManager.java`)**:
+     - Safely queries Nokia/Symbian device properties via `System.getProperty(...)` with exception fallbacks:
+       - `com.nokia.mid.networkavailability` (Detects home network vs roaming)
+       - `com.nokia.network.access` (Bearer detection: GPRS, EDGE, 3G, WLAN)
+       - `com.nokia.mid.countrycode` (Mobile Country Code, MCC)
+       - `com.nokia.mid.networkcode` (Mobile Network Code, MNC)
+       - `com.nokia.mid.networkid` / `phone.sim.operator` (Carrier name)
+       - `com.nokia.mid.selectedsim` (Detects dual-SIM capability on Nokia S40/S60)
+       - `com.nokia.mid.imei` / `com.nokia.mid.imsi` (Safely queried and masked for UI display)
+     - Encapsulates APN carrier profiles:
+       - Auto (Default Internet)
+       - Vodafone (`live.vodafone.com` / proxy `10.10.1.100:8080`)
+       - T-Mobile (`fast.t-mobile.com`)
+       - AT&T (`phone`)
+       - Airtel (`airtelgprs.com`)
+       - Jio (`jionet`)
+       - Orange (`orange` / proxy `192.168.10.100:8080`)
+       - Custom APN & Proxy
+     - Bearer modes: `Auto`, `2G (GPRS)`, `2.5G (EDGE)`, `3G (WCDMA)`, `3.5G (HSDPA)`, `WiFi / WLAN`.
+     - Dual-SIM slot management: `SIM 1 (Primary)`, `SIM 2 (Secondary)`.
+     - Real-time mobile data usage accounting: records session bytes and saves cumulative mobile data transferred into RMS.
+  2. **Storage Layer (`StorageManager.java`)**:
+     - Added records 6-12 in `nb_settings` RMS store:
+       - Record 6: `simSlot` (0 = SIM 1, 1 = SIM 2)
+       - Record 7: `networkBearer` (0-5)
+       - Record 8: `apnPreset` (0-7)
+       - Record 9: `customApn`
+       - Record 10: `customProxy`
+       - Record 11: `dataSaver` ("1" or "0")
+       - Record 12: `totalMobileBytes` (long)
+     - Flushes cumulative byte counters in batches (~32 KB) to preserve flash lifespan.
+  3. **Networking & Resilience (`NetworkManager.java`)**:
+     - Injects `SimManager` into HTTP pipeline for both page loads and image downloads.
+     - Emits authentic Nokia cellular HTTP headers:
+       - `User-Agent: Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; <bearer>)`
+       - `X-Nokia-SIM: 1` or `2`
+       - `X-Nokia-Bearer: G | E | 3G | H | W`
+       - `X-Nokia-Operator: <carrier>`
+       - `X-Nokia-APN: <apn>`
+       - `X-Nokia-Signal: <bars>`
+       - `X-Nokia-Data-Saver: 1`
+     - Cellular retry engine: gracefully retries failed connections over cellular radio with informative status callbacks (`"Connecting (SIM 1: EDGE)..."`, `"Retrying on SIM 1..."`).
+  4. **Authentic UI & Status Bar (`BrowserCanvas.java` & `MediaPlayerCanvas.java`)**:
+     - Header bar features a dedicated right-aligned Cellular Status Cluster:
+       - 4 vertical stepped signal strength bars (active green `0x22C55E` vs inactive `0x334155`).
+       - Bearer badge box (`[G]`, `[E]`, `[3G]`, `[H]`, `[W]`), illuminated in cyan with data transfer activity detection.
+       - SIM slot badge (`[S1]` or `[S2]`) with roaming amber `[R]` alert.
+     - Dynamic title truncation prevents overlap with the cellular cluster on both 240x320 portrait and 320x240 landscape screens.
+     - Multimedia player reflects signal bars and bearer badge in video/audio playback headers.
+  5. **UI Forms & Dialogs (`BrowserMIDlet.java`)**:
+     - Added `"SIM & Mobile Network"` to Browser Options Menu.
+     - Added `SimNetworkForm` for configuring Active SIM Slot, Bearer, APN Profile, Custom APN, Custom Proxy, and Data Saver.
+     - Added `SimInfoDialog` (`Alert`) showing detected Operator, MCC/MNC, Bearer, APN, Signal, Roaming status, masked IMEI/IMSI, Session Data, and Total Mobile Data counter with `"Reset Counter"` command.
+  6. **Descriptor & Manifest Updates (`MANIFEST.MF` & `build.sh`)**:
+     - Added standard Nokia cellular attributes:
+       - `Nokia-MIDlet-Dual-SIM-Support: true`
+       - `Nokia-MIDlet-Auto-Select-SIM: 1`
+       - `Nokia-MIDlet-Network-Access: gprs`
+       - `MIDlet-Permissions: javax.microedition.io.Connector.http`
+  7. **Gateway Bandwidth Optimization (`server/server.js`)**:
+     - Parses Nokia cellular headers and logs real-time cellular traffic telemetry.
+     - When `X-Nokia-Data-Saver: 1` or `Bearer == GPRS`, dynamically scales proxy images to 160px width to conserve mobile bandwidth.
+  8. **Footprint & Bytecode Optimization**:
+     - Removed unused `StringUtil.java`.
+     - Streamlined omnibox prefix routing in `BrowserMIDlet.java`, eliminating dozens of redundant string constants.
+     - Compiled client JAR size: **48,591 bytes** (~47.4 KB), comfortably under the 50 KB ceiling.
+- **Verification**:
+  - Clean ECJ build targeting CLDC 1.1 / MIDP 2.0 with 0 errors and 0 warnings.
+  - Verified server gateway parses cellular headers: `[Cellular: SIM 1 | EDGE | Vodafone UK | live.vodafone.com | Saver: ON | Sig: 4/4]`.
+  - Verified MicroEmulator loads `build/NokiaBrowser.jad` and runs cleanly.
+
 ---
 
 ## 4. Keypad Controls Reference (240x320 Nokia QVGA)
@@ -376,7 +452,7 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
 - **Key 0**: Open Bookmarks / Speed Dial.
 - **Key \***: Toggle Fullscreen Mode (in Browser: hides header & footer; in Video Player: toggles 16:9 widescreen video fullscreen OSD).
 - **Key \#**: Open Search / URL input dialog.
-- **Left Softkey**: Open Browser Menu (Search, Bookmarks, History, FrogFind, Reload, Toggle Landscape, Settings).
+- **Left Softkey**: Open Browser Menu (Search, Bookmarks, History, FrogFind, Reload, Toggle Landscape, SIM & Mobile Network, Settings).
 - **Right Softkey**: Back / Exit.
 
 ### Multimedia Player Controls (`MediaPlayerCanvas`)
@@ -408,7 +484,7 @@ cd /home/a1/Pictures/NokiaBrowser
 - **Flags**: `-source 1.3 -target cldc1.1 -g:none -nowarn`
 - **Classpath**: `tools/cldcapi11.jar:tools/midpapi20.jar:tools/mmapi-jsr135.jar`
 - **Output Files**:
-  - `build/NokiaBrowser.jar` (42,362 bytes)
+  - `build/NokiaBrowser.jar` (48,591 bytes)
   - `build/NokiaBrowser.jad`
 
 ### Launch Gateway Server

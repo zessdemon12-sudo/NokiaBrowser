@@ -774,7 +774,18 @@ const server = http.createServer(async (req, res) => {
     const pathname = parsedUrl.pathname;
     const gatewayHost = req.headers.host || ('127.0.0.1:' + PORT);
 
-    console.log(`[${new Date().toISOString().substring(11, 19)}] ${req.method} ${pathname}`);
+    const nokiaSim = req.headers['x-nokia-sim'];
+    const nokiaBearer = req.headers['x-nokia-bearer'];
+    const nokiaOp = req.headers['x-nokia-operator'];
+    const nokiaApn = req.headers['x-nokia-apn'];
+    const nokiaDataSaver = req.headers['x-nokia-data-saver'] === '1';
+    const nokiaSignal = req.headers['x-nokia-signal'];
+
+    if (nokiaBearer || nokiaSim) {
+        console.log(`[${new Date().toISOString().substring(11, 19)}] ${req.method} ${pathname} [Cellular: SIM ${nokiaSim || '1'} | ${nokiaBearer || 'GPRS'} | ${nokiaOp || 'Nokia Mobile'} | ${nokiaApn || 'internet'} | Saver: ${nokiaDataSaver ? 'ON' : 'OFF'} | Sig: ${nokiaSignal || 4}/4]`);
+    } else {
+        console.log(`[${new Date().toISOString().substring(11, 19)}] ${req.method} ${pathname}`);
+    }
 
     // Health check
     if (pathname === '/' || pathname === '/status') {
@@ -1252,7 +1263,10 @@ const server = http.createServer(async (req, res) => {
     // Image Proxy
     if (pathname === '/image') {
         const imgUrl = parsedUrl.searchParams.get('url');
-        const maxW = parseInt(parsedUrl.searchParams.get('w') || '220');
+        let maxW = parseInt(parsedUrl.searchParams.get('w') || '220');
+        if (nokiaDataSaver || nokiaBearer === 'G') {
+            maxW = Math.min(maxW, 160);
+        }
         if (!imgUrl) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             return res.end('Missing image url');

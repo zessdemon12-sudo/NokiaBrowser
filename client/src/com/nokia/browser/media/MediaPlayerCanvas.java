@@ -1,5 +1,6 @@
 package com.nokia.browser.media;
 
+import com.nokia.browser.net.SimManager;
 import com.nokia.browser.storage.StorageManager;
 
 import javax.microedition.io.Connector;
@@ -64,6 +65,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
 
     private Font fontSmallBold;
     private Font fontSmallPlain;
+    private SimManager simManager;
 
     public MediaPlayerCanvas(Display display, Displayable returnScreen, String mediaUrl, String mediaTitle, boolean isVideo) {
         this(display, returnScreen, mediaUrl, mediaTitle, isVideo, (StorageManager) null);
@@ -84,6 +86,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         this.mediaTitle = (mediaTitle != null && mediaTitle.length() > 0) ? mediaTitle : "Media Stream";
         this.isVideo = isVideo;
         this.storage = storage;
+        this.simManager = (storage != null) ? new SimManager(storage) : null;
         this.gatewayUrl = (storage != null && storage.getGatewayUrl() != null) ? storage.getGatewayUrl() : "http://127.0.0.1:8080";
 
         this.fontSmallBold = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
@@ -245,7 +248,18 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
 
             streamConn = (HttpConnection) Connector.open(streamUrl, Connector.READ, true);
             streamConn.setRequestMethod(HttpConnection.GET);
-            streamConn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
+            if (simManager != null) {
+                streamConn.setRequestProperty("User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");
+                streamConn.setRequestProperty("X-Nokia-SIM", String.valueOf(simManager.getActiveSim() + 1));
+                streamConn.setRequestProperty("X-Nokia-Bearer", simManager.getBearerBadge());
+                streamConn.setRequestProperty("X-Nokia-Operator", simManager.getDetectedOperator());
+                streamConn.setRequestProperty("X-Nokia-APN", simManager.getApnName());
+                if (simManager.isDataSaver()) {
+                    streamConn.setRequestProperty("X-Nokia-Data-Saver", "1");
+                }
+            } else {
+                streamConn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
+            }
 
             streamDis = streamConn.openDataInputStream();
 
@@ -289,6 +303,9 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                     frameBuffer = new byte[Math.max(len, frameBuffer.length * 2)];
                 }
                 streamDis.readFully(frameBuffer, 0, len);
+                if (simManager != null) {
+                    simManager.recordBytes(len + 8);
+                }
 
                 try {
                     Image frame = Image.createImage(frameBuffer, 0, len);
@@ -684,11 +701,32 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
             String hdr = isVideo ? "▶ Video" : "♫ Audio";
             g.drawString(hdr, 6, 2, Graphics.TOP | Graphics.LEFT);
 
+            // Right side: Signal Bars and Bearer badge
+            int sigX = w - 16;
+            int bars = (simManager != null) ? simManager.getSignalBars() : 4;
+            for (int b = 1; b <= 4; b++) {
+                int barH = b * 2 + 1;
+                int barY = 14 - barH;
+                int bx = sigX + (b - 1) * 3;
+                g.setColor((b <= bars) ? 0x22C55E : 0x475569);
+                g.fillRect(bx, barY, 2, barH);
+            }
+            String bBadge = (simManager != null) ? simManager.getBearerBadge() : "E";
+            int bw = (bBadge.length() > 1) ? 17 : 12;
+            int bx = sigX - bw - 4;
+            g.setColor(0x334155);
+            g.fillRect(bx, 2, bw, 14);
+            g.setColor(0x38BDF8);
+            g.drawString(bBadge, bx + bw / 2, 2, Graphics.HCENTER | Graphics.TOP);
+
             g.setColor(0xF8FAFC);
             g.setFont(fontSmallPlain);
             String dispTitle = mediaTitle;
-            if (dispTitle.length() > 36) dispTitle = dispTitle.substring(0, 33) + "...";
-            g.drawString(dispTitle, 60, 2, Graphics.TOP | Graphics.LEFT);
+            int maxW = bx - 60;
+            while (dispTitle.length() > 4 && fontSmallPlain.stringWidth(dispTitle) > maxW) {
+                dispTitle = dispTitle.substring(0, dispTitle.length() - 2);
+            }
+            g.drawString(dispTitle, 58, 2, Graphics.TOP | Graphics.LEFT);
 
             // Viewport (y: 20..162)
             int vidY = 20;
@@ -772,8 +810,26 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
             g.fillRect(0, 0, w, 24);
             g.setColor(0x38BDF8);
             g.setFont(fontSmallBold);
-            String hdr = isVideo ? "▶ KamTape 3GP/Video" : "♫ Audio Player";
+            String hdr = isVideo ? "▶ Video Player" : "♫ Audio Player";
             g.drawString(hdr, 6, 4, Graphics.TOP | Graphics.LEFT);
+
+            // Right side: Signal Bars and Bearer badge
+            int sigX = w - 16;
+            int bars = (simManager != null) ? simManager.getSignalBars() : 4;
+            for (int b = 1; b <= 4; b++) {
+                int barH = b * 2 + 1;
+                int barY = 18 - barH;
+                int bx = sigX + (b - 1) * 3;
+                g.setColor((b <= bars) ? 0x22C55E : 0x475569);
+                g.fillRect(bx, barY, 2, barH);
+            }
+            String bBadge = (simManager != null) ? simManager.getBearerBadge() : "E";
+            int bw = (bBadge.length() > 1) ? 17 : 12;
+            int bx = sigX - bw - 4;
+            g.setColor(0x334155);
+            g.fillRect(bx, 5, bw, 14);
+            g.setColor(0x38BDF8);
+            g.drawString(bBadge, bx + bw / 2, 5, Graphics.HCENTER | Graphics.TOP);
 
             // Title
             g.setColor(0xF8FAFC);
