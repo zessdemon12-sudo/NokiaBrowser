@@ -820,6 +820,16 @@ const server = http.createServer(async (req, res) => {
         }
     }
 
+    // YouTube Web Login Helper (for PC / Smartphone browser)
+    if (pathname === '/yt_login') {
+        return handleYtWebLoginHelper(req, res, gatewayHost);
+    }
+
+    // YouTube Web Login POST handler (upload / paste cookies)
+    if (pathname === '/youtube/login' && req.method === 'POST') {
+        return handleYtWebLoginPost(req, res, gatewayHost);
+    }
+
     // Video Frame Streamer Engine (240x180 QVGA at 8 FPS)
     if (pathname === '/video_stream') {
         let videoUrl = parsedUrl.searchParams.get('url');
@@ -1290,6 +1300,13 @@ const server = http.createServer(async (req, res) => {
                 targetUrl = 'https://' + targetUrl;
             } else if (targetUrl === 'www.youtube.com' || targetUrl.startsWith('www.youtube.com/')) {
                 targetUrl = 'https://' + targetUrl;
+            } else if (targetUrl === 'subs' || targetUrl === 'subscriptions' || targetUrl === 'yt subs' ||
+                       targetUrl === 'youtube subs' || targetUrl === 'feed/subscriptions' || targetUrl === 'feed/channels') {
+                targetUrl = 'https://www.youtube.com/' + (targetUrl.endsWith('channels') ? 'feed/channels' : 'feed/subscriptions');
+            } else if (targetUrl === 'yt login' || targetUrl === 'youtube login' || targetUrl === 'login youtube' || targetUrl === 'yt signin') {
+                targetUrl = 'https://www.youtube.com/login';
+            } else if (targetUrl === 'yt logout' || targetUrl === 'youtube logout') {
+                targetUrl = 'https://www.youtube.com/logout';
             } else if (targetUrl.startsWith('search:youtube') || targetUrl.startsWith('search youtube') ||
                        targetUrl.startsWith('search www.youtube.com') || targetUrl.startsWith('search https://www.youtube.com') ||
                        targetUrl.startsWith('search http://www.youtube.com') || targetUrl.startsWith('search:https://www.youtube.com') ||
@@ -1415,6 +1432,13 @@ const server = http.createServer(async (req, res) => {
     // Search (Bing, FrogFind, or KamTape)
     if (pathname === '/search') {
         const q = parsedUrl.searchParams.get('q') || '';
+        const lq = q.trim().toLowerCase();
+        if (lq === 'yt login' || lq === 'youtube login' || lq === 'login youtube') {
+            return youtube.handleYouTubeRequest('https://www.youtube.com/login', res, gatewayHost, decodeHtmlEntities);
+        }
+        if (lq === 'subs' || lq === 'subscriptions' || lq === 'yt subs' || lq === 'youtube subs') {
+            return youtube.handleYouTubeRequest('https://www.youtube.com/feed/subscriptions', res, gatewayHost, decodeHtmlEntities);
+        }
         const engine = parsedUrl.searchParams.get('engine') || 'bing';
         if (engine === 'frogfind') {
             const frogUrl = q ? ('https://www.frogfind.com/?q=' + encodeURIComponent(q)) : 'https://www.frogfind.com';
@@ -1608,6 +1632,129 @@ function handleRobiPortalRequest(targetUrl, req, res, gatewayHost) {
         'X-Nokia-Robi-Portal': '1'
     });
     res.end(payload);
+}
+
+function handleYtWebLoginHelper(req, res, gatewayHost) {
+    const auth = youtube.getAuthState();
+    const subList = auth.subscriptions || [];
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YouTube Account Login - Nokia Gateway</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f0f0f; color: #f1f1f1; margin: 0; padding: 20px; }
+  .container { max-width: 680px; margin: 0 auto; background: #1f1f1f; padding: 24px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+  h1 { color: #ff0000; display: flex; align-items: center; gap: 10px; margin-top: 0; font-size: 24px; }
+  .status-badge { display: inline-block; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 14px; margin-bottom: 20px; }
+  .status-logged-in { background: #1a4d2e; color: #4ade80; border: 1px solid #22c55e; }
+  .status-logged-out { background: #4a1d1d; color: #f87171; border: 1px solid #ef4444; }
+  .card { background: #272727; border-radius: 8px; padding: 18px; margin-bottom: 20px; border: 1px solid #3f3f3f; }
+  h2 { font-size: 18px; margin-top: 0; color: #fff; }
+  p { color: #aaa; font-size: 14px; line-height: 1.5; }
+  textarea { width: 100%; box-sizing: border-box; height: 110px; background: #121212; border: 1px solid #444; border-radius: 6px; color: #eee; font-family: monospace; font-size: 12px; padding: 10px; resize: vertical; }
+  button { background: #cc0000; color: white; border: none; padding: 10px 18px; font-size: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+  button:hover { background: #ff0000; }
+  .btn-demo { background: #2563eb; }
+  .btn-demo:hover { background: #3b82f6; }
+  .btn-logout { background: #4b5563; }
+  .btn-logout:hover { background: #6b7280; }
+  .sub-list { list-style: none; padding: 0; margin: 10px 0 0 0; }
+  .sub-list li { display: flex; justify-content: space-between; padding: 8px 12px; background: #1e1e1e; margin-bottom: 6px; border-radius: 6px; font-size: 14px; }
+  .code-hint { background: #121212; padding: 4px 8px; border-radius: 4px; font-family: monospace; font-size: 13px; color: #38bdf8; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📺 Nokia Gateway: YouTube Login Helper</h1>
+  <div>
+    ${auth.loggedIn 
+      ? `<div class="status-badge status-logged-in">✅ Signed In as ${auth.username} (${auth.isDemo ? 'Demo Mode' : 'Live Netscape Session'})</div>` 
+      : `<div class="status-badge status-logged-out">⚠️ Not Signed In (Guest)</div>`}
+  </div>
+
+  <div class="card">
+    <h2>⚡ 1-Click Instant Demo Login</h2>
+    <p>Activate preloaded retro tech channels (Nokia, Action Retro, LGR, Techmoan, 8-Bit Guy) to immediately test the Subscriptions Feed on your Nokia device without exporting cookies.</p>
+    <form method="POST" action="/youtube/login">
+      <input type="hidden" name="action" value="demo">
+      <button type="submit" class="btn-demo">Activate Demo Account</button>
+      ${auth.loggedIn ? `<button type="submit" name="action" value="logout" class="btn-logout" style="margin-left:10px;">Sign Out</button>` : ''}
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>🔑 Sign In With Real YouTube Cookies</h2>
+    <p>Paste your YouTube session cookies (Netscape format or raw <code>LOGIN_INFO=...; SID=...</code> header). You can extract them using any browser extension like <em>Get cookies.txt LOCALLY</em> or Chrome DevTools.</p>
+    <form method="POST" action="/youtube/login" enctype="application/x-www-form-urlencoded">
+      <input type="hidden" name="action" value="cookies">
+      <textarea name="cookie_data" placeholder="Paste Netscape cookies.txt content or raw cookie string here..."></textarea>
+      <div style="margin-top: 12px;">
+        <button type="submit">Save Session Cookies</button>
+      </div>
+    </form>
+  </div>
+
+  ${auth.loggedIn ? `
+  <div class="card">
+    <h2>📑 Active Subscriptions (${subList.length})</h2>
+    <ul class="sub-list">
+      ${subList.map(s => `<li><span><strong>${s.name}</strong> ${s.handle ? '(' + s.handle + ')' : ''}</span></li>`).join('')}
+    </ul>
+  </div>
+  ` : ''}
+
+  <div class="card">
+    <h2>📱 Accessing on Nokia Device</h2>
+    <p>On your Nokia J2ME phone browser:</p>
+    <p>1. In the address bar, type: <span class="code-hint">subs</span> or <span class="code-hint">https://www.youtube.com/feed/subscriptions</span></p>
+    <p>2. To manage channels, go to: <span class="code-hint">https://www.youtube.com/feed/channels</span></p>
+    <p>3. To sign in or out on phone: <span class="code-hint">yt login</span> or <span class="code-hint">https://www.youtube.com/login</span></p>
+  </div>
+</div>
+</body>
+</html>`;
+
+    res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-cache'
+    });
+    return res.end(html);
+}
+
+function handleYtWebLoginPost(req, res, gatewayHost) {
+    let body = '';
+    req.on('data', chunk => {
+        body += chunk.toString();
+        if (body.length > 5 * 1024 * 1024) req.destroy();
+    });
+    req.on('end', () => {
+        let action = '';
+        let cookieData = '';
+        try {
+            const params = new URLSearchParams(body);
+            action = params.get('action') || '';
+            cookieData = params.get('cookie_data') || '';
+        } catch (e) {}
+
+        if (action === 'demo') {
+            const auth = youtube.getAuthState();
+            auth.loggedIn = true;
+            auth.username = 'RetroTechFan (Demo)';
+            auth.isDemo = true;
+            auth.subscriptions = [...youtube.DEMO_CHANNELS];
+            youtube.saveAuthState(auth);
+        } else if (action === 'logout') {
+            youtube.clearAuth();
+        } else if (cookieData) {
+            youtube.saveCookiesFromRaw(cookieData);
+        }
+
+        res.writeHead(302, { 'Location': '/yt_login' });
+        return res.end();
+    });
 }
 
 server.listen(PORT, '0.0.0.0', () => {

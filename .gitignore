@@ -18,3 +18,6 @@ tools/*.bak
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# YouTube Auth Cookies
+server/data/youtube_cookies.txt

@@ -159,6 +159,23 @@ First-class support for **FrogFind** (`https://www.frogfind.com`), Action Retro'
 
 ---
 
+## YouTube Account Sign-In & Subscriptions (www.youtube.com)
+
+Full-featured YouTube account and subscription feed integration:
+- **Multi-Method Authentication**:
+  - **1-Click Instant Demo Login**: Instant sign-in preloaded with curated retro tech channels (Nokia, Action Retro, LGR, Techmoan, The 8-Bit Guy) for effortless immediate testing.
+  - **PC / Smartphone Web Login Helper (`http://<gateway_ip>:8080/yt_login`)**: Drag-and-drop or paste `cookies.txt` or browser session cookies (`LOGIN_INFO=...; SID=...`) from any browser on your Wi-Fi network.
+  - **WAP Phone Login (`https://www.youtube.com/login`)**: Direct sign-in form on the Nokia handset.
+- **Subscriptions Feed (`https://www.youtube.com/feed/subscriptions` / `subs` shortcut)**:
+  - Displays latest uploaded videos from your subscribed channels as rich QVGA cards with 220px thumbnails, duration badges, and channel metadata.
+  - Dual playback: Hardware-accelerated 3GP streaming or universal frame streaming with companion MP3 audio.
+- **Subscribed Channels Management (`https://www.youtube.com/feed/channels`)**:
+  - View all active subscriptions, browse individual channel uploads, or 1-click unsubscribe.
+- **Watch Page Subscription Toggle**:
+  - Every watch page (`/watch?v=...`) features a live `[➕ Subscribe]` or `[✔️ Subscribed]` button.
+
+---
+
 ## License
 
 This project is open source and available under the [MIT License](LICENSE).

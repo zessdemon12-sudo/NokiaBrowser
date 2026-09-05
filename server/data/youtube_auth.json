@@ -1,0 +1,32 @@
+{
+  "loggedIn": true,
+  "username": "RetroTechFan (Demo)",
+  "isDemo": true,
+  "subscriptions": [
+    {
+      "id": "UC_n6gOQp_e9yQcE5rV9xLwg",
+      "name": "Nokia",
+      "handle": "@nokia"
+    },
+    {
+      "id": "UC2wK63A7jA1t7x8iE7P4Y5A",
+      "name": "Action Retro",
+      "handle": "@ActionRetro"
+    },
+    {
+      "id": "UCLx053rWZxCiYmTHH450GDA",
+      "name": "LGR",
+      "handle": "@lazygamer"
+    },
+    {
+      "id": "UCQvX28h3_b8_Fq8kSj9W7wA",
+      "name": "Techmoan",
+      "handle": "@Techmoan"
+    },
+    {
+      "id": "UC8uT9cgJor0Yn5z5b9s5m9w",
+      "name": "The 8-Bit Guy",
+      "handle": "@The8BitGuy"
+    }
+  ]
+}

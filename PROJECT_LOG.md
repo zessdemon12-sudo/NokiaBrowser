@@ -552,6 +552,37 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
 
 ---
 
+### Event 019: YouTube Account Sign-In, Session Management & Subscriptions Feed (`www.youtube.com`)
+- **Timestamp**: 2026-09-06T03:30:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Implement YouTube account login, session management, Subscriptions feed (`/feed/subscriptions`), Subscribed channels list (`/feed/channels`), in-app subscribe/unsubscribe, and Web Login Helper for PC/mobile browsers.
+- **Architectural Analysis & Design**:
+  1. **YouTube Authentication Constraints**: Modern YouTube (Google) removed username/password and third-party OAuth 2.0 logins for media extractors. The only supported mechanism for authenticated InnerTube API and `yt-dlp` requests is Netscape cookie authentication (`--cookies`).
+  2. **Multi-Channel Login Architecture**:
+     - **In-App WAP Sign-In (`https://www.youtube.com/login`)**: Tailored 240x320 Nokia page with instant login choices.
+     - **1-Click Instant Demo Login**: Pre-loads top retro tech channels (Nokia, Action Retro, LGR, Techmoan, The 8-Bit Guy) so users can immediately test the Subscriptions Feed without needing manual cookie export.
+     - **PC / Smartphone Web Login Helper (`http://<gateway_ip>:8080/yt_login`)**: Responsive modern web page accessible across local Wi-Fi to drag-and-drop or paste `cookies.txt` or session cookie headers (`LOGIN_INFO=...; SID=...`), with a live account status badge and channel list.
+     - **Filesystem Session Persistence**: Saves auth state in `server/data/youtube_auth.json` and Netscape cookies in `server/data/youtube_cookies.txt` (gitignored for security).
+  3. **Subscriptions Feed & Channel Management Engine (`server/youtube.js`)**:
+     - **Live Feed Mode**: When real session cookies exist, queries `yt-dlp --cookies ... --dump-json --flat-playlist --playlist-end 15 https://www.youtube.com/feed/subscriptions`.
+     - **Aggregated Channel Mode**: When in Demo mode or if live feed query falls back, queries recent video uploads across subscribed channels, aggregates results, and renders them as rich 240x320 Nokia video cards.
+     - **Channel Management (`/feed/channels`)**: Lists all subscribed channels with direct video browse links and 1-click `[➖ Unsubscribe]` buttons.
+     - **In-App Subscribe / Unsubscribe (`/subscribe` & `/unsubscribe`)**: Watch pages (`/watch?v=...`) dynamically detect subscription status and show `[➕ Subscribe to <Channel>]` or `[✔️ Subscribed (<Channel>) - Click to Unsubscribe]`.
+  4. **Omnibox & Search Shortcuts**:
+     - Omnibox and search routing intercepts `subs`, `subscriptions`, `yt subs`, `feed/subscriptions`, `yt login`, `youtube login`, and `yt logout`, seamlessly routing to the appropriate YouTube account pages.
+  5. **Client Footprint (< 50 KB)**:
+     - By handling authentication, HTML formatting, InnerTube extraction, and cookie parsing on the gateway server, `build/NokiaBrowser.jar` remained at **49,923 bytes** (strictly under the 50,000-byte ceiling).
+- **Verification**:
+  - `curl -s "http://127.0.0.1:8080/page?url=https://www.youtube.com"`: Verified guest and logged-in header banners.
+  - `curl -s "http://127.0.0.1:8080/page?url=https://www.youtube.com/login"`: Verified WAP login options.
+  - `curl -s -I "http://127.0.0.1:8080/yt_login"`: Verified responsive Web Login Helper endpoint.
+  - `curl -s "http://127.0.0.1:8080/page?url=https://www.youtube.com/login?demo=1"`: Verified 1-click instant demo activation.
+  - `curl -s "http://127.0.0.1:8080/page?url=https://www.youtube.com/feed/subscriptions"`: Verified rich video cards with 3GP/HTTP streaming links and thumbnails.
+  - `curl -s "http://127.0.0.1:8080/page?url=https://www.youtube.com/feed/channels"`: Verified subscribed channels listing and unsubscribe actions.
+  - Client compiled cleanly with 0 errors via `./build.sh` (49,923 bytes).
+
+---
+
 ## 4. Keypad Controls Reference (240x320 Nokia QVGA)
 
 ### Browser Navigation Controls
