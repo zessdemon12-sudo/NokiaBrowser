@@ -1,5 +1,7 @@
 package com.nokia.browser.media;
 
+import com.nokia.browser.storage.StorageManager;
+
 import javax.microedition.io.Connector;
 import javax.microedition.io.HttpConnection;
 import javax.microedition.lcdui.Canvas;
@@ -8,6 +10,7 @@ import javax.microedition.lcdui.Displayable;
 import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
+import javax.microedition.lcdui.game.Sprite;
 import javax.microedition.media.Manager;
 import javax.microedition.media.Player;
 import javax.microedition.media.PlayerListener;
@@ -17,9 +20,9 @@ import java.io.DataInputStream;
 import java.io.InputStream;
 
 /**
- * Fullscreen 240x320 Multimedia Player for Nokia J2ME.
+ * Fullscreen 240x320 & 320x240 Multimedia Player for Nokia J2ME.
  * Supports:
- * 1. Video Frame Streamer (240x180 QVGA at 8 FPS) - Universal across MicroEmulator & Nokia HW.
+ * 1. Video Frame Streamer (240x144 / 320x180 widescreen QVGA at 8 FPS) - Universal across MicroEmulator & Nokia HW.
  * 2. Native MMAPI Player (3GP Video & Audio) with hardware VideoControl acceleration.
  */
 public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnable {
@@ -29,6 +32,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     private String mediaUrl;
     private String mediaTitle;
     private boolean isVideo;
+    private StorageManager storage;
 
     private Player player;
     private VolumeControl volumeControl;
@@ -40,10 +44,15 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     private boolean running;
     private boolean isPlaying;
     private boolean isPaused;
+    private boolean isFullscreenVideo;
     private String statusMessage;
     private int volumeLevel; // 0 to 100
     private long durationUs; // microseconds
     private long mediaTimeUs;
+
+    // Software Rotation Offscreen Buffers (for 240x320 portrait devices rotated to landscape)
+    private Image offscreenBuffer;
+    private Graphics offscreenGraphics;
 
     private Thread videoStreamThread;
     private Thread animThread;
@@ -57,17 +66,25 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     private Font fontSmallPlain;
 
     public MediaPlayerCanvas(Display display, Displayable returnScreen, String mediaUrl, String mediaTitle, boolean isVideo) {
-        this(display, returnScreen, mediaUrl, mediaTitle, isVideo, "http://127.0.0.1:8080");
+        this(display, returnScreen, mediaUrl, mediaTitle, isVideo, (StorageManager) null);
     }
 
     public MediaPlayerCanvas(Display display, Displayable returnScreen, String mediaUrl, String mediaTitle, boolean isVideo, String gatewayUrl) {
+        this(display, returnScreen, mediaUrl, mediaTitle, isVideo, (StorageManager) null);
+        if (gatewayUrl != null && gatewayUrl.length() > 0) {
+            this.gatewayUrl = gatewayUrl;
+        }
+    }
+
+    public MediaPlayerCanvas(Display display, Displayable returnScreen, String mediaUrl, String mediaTitle, boolean isVideo, StorageManager storage) {
         setFullScreenMode(true);
         this.display = display;
         this.returnScreen = returnScreen;
         this.mediaUrl = mediaUrl;
         this.mediaTitle = (mediaTitle != null && mediaTitle.length() > 0) ? mediaTitle : "Media Stream";
         this.isVideo = isVideo;
-        this.gatewayUrl = (gatewayUrl != null && gatewayUrl.length() > 0) ? gatewayUrl : "http://127.0.0.1:8080";
+        this.storage = storage;
+        this.gatewayUrl = (storage != null && storage.getGatewayUrl() != null) ? storage.getGatewayUrl() : "http://127.0.0.1:8080";
 
         this.fontSmallBold = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
         this.fontSmallPlain = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL);
@@ -76,6 +93,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         this.running = true;
         this.isPlaying = false;
         this.isPaused = false;
+        this.isFullscreenVideo = false;
         this.statusMessage = "Connecting...";
         this.volumeLevel = 80;
         this.durationUs = -1;
@@ -84,6 +102,37 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         this.frameBuffer = new byte[32768];
 
         startPlayback();
+    }
+
+    public boolean isLandscape() {
+        if (storage != null) {
+            int o = storage.getOrientation();
+            if (o == StorageManager.ORIENTATION_LANDSCAPE) return true;
+            if (o == StorageManager.ORIENTATION_PORTRAIT) return false;
+        }
+        return getWidth() > getHeight();
+    }
+
+    public boolean isSoftwareRotation() {
+        return isLandscape() && (getWidth() < getHeight());
+    }
+
+    public int getLogicalWidth() {
+        if (isSoftwareRotation()) {
+            return getHeight() > 0 ? getHeight() : 320;
+        }
+        return getWidth() > 0 ? getWidth() : 240;
+    }
+
+    public int getLogicalHeight() {
+        if (isSoftwareRotation()) {
+            return getWidth() > 0 ? getWidth() : 240;
+        }
+        return getHeight() > 0 ? getHeight() : 320;
+    }
+
+    protected void sizeChanged(int w, int h) {
+        repaint();
     }
 
     private void startPlayback() {
@@ -281,7 +330,8 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
             base = gatewayUrl + "/video_stream?url=" + rawUrl;
         }
         char sep = (base.indexOf('?') >= 0) ? '&' : '?';
-        return base + sep + "t=" + startSec + "&fps=8";
+        String sizeParam = isLandscape() ? "&max_w=320&max_h=180" : "&max_w=240&max_h=144";
+        return base + sep + "t=" + startSec + "&fps=8" + sizeParam;
     }
 
     private String buildAudioUrl(String rawUrl, long startSec) {
@@ -389,6 +439,26 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
             gameAction = getGameAction(keyCode);
         } catch (Exception e) {}
 
+        if (isSoftwareRotation()) {
+            int transCode = keyCode;
+            int transAction = gameAction;
+            if (gameAction == UP || keyCode == -1) {
+                transCode = -3;
+                transAction = LEFT;
+            } else if (gameAction == DOWN || keyCode == -2) {
+                transCode = -4;
+                transAction = RIGHT;
+            } else if (gameAction == LEFT || keyCode == -3) {
+                transCode = -2;
+                transAction = DOWN;
+            } else if (gameAction == RIGHT || keyCode == -4) {
+                transCode = -1;
+                transAction = UP;
+            }
+            keyCode = transCode;
+            gameAction = transAction;
+        }
+
         if (keyCode == -6 || keyCode == '7') {
             stopAndClose();
             return;
@@ -396,6 +466,13 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
 
         if (keyCode == -7) {
             stopAndClose();
+            return;
+        }
+
+        // Star (*): Toggle Fullscreen Video Mode
+        if (keyCode == '*' && isVideo) {
+            isFullscreenVideo = !isFullscreenVideo;
+            repaint();
             return;
         }
 
@@ -431,22 +508,37 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     }
 
     protected void pointerPressed(int x, int y) {
-        // Bottom Softkeys Bar (y: 285..320)
-        if (y >= 285) {
-            stopAndClose();
+        int lx = x;
+        int ly = y;
+        if (isSoftwareRotation()) {
+            int pw = getWidth();
+            lx = y;
+            ly = pw - 1 - x;
+        }
+        int lw = getLogicalWidth();
+        int lh = getLogicalHeight();
+
+        // Bottom Softkeys Bar
+        if (ly >= lh - 25) {
+            if (lx > lw / 3 && lx < (lw * 2) / 3 && isVideo) {
+                isFullscreenVideo = !isFullscreenVideo;
+                repaint();
+            } else {
+                stopAndClose();
+            }
             return;
         }
 
-        // Tap on video/visual area (y: 44..190) toggles Play / Pause
-        if (y >= 44 && y <= 190) {
+        // Tap on video area toggles Play / Pause
+        if (isVideo) {
             togglePlayPause();
             return;
         }
 
-        // Tap on volume bar area (y: 235..265)
-        if (y >= 235 && y <= 265) {
-            if (x < 80) adjustVolume(-10);
-            else if (x > 140) adjustVolume(10);
+        // Tap on volume bar area
+        if (ly >= lh - 85 && ly <= lh - 55) {
+            if (lx < lw / 2) adjustVolume(-10);
+            else adjustVolume(10);
             return;
         }
     }
@@ -534,101 +626,235 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     }
 
     protected void paint(Graphics g) {
-        int w = getWidth();  // 240
-        int h = getHeight(); // 320
+        int lw = getLogicalWidth();
+        int lh = getLogicalHeight();
 
+        if (isSoftwareRotation()) {
+            if (offscreenBuffer == null || offscreenBuffer.getWidth() != lw || offscreenBuffer.getHeight() != lh) {
+                offscreenBuffer = Image.createImage(lw, lh);
+                offscreenGraphics = offscreenBuffer.getGraphics();
+            }
+            renderToGraphics(offscreenGraphics, lw, lh);
+            g.drawRegion(offscreenBuffer, 0, 0, lw, lh, Sprite.TRANS_ROT90, 0, 0, Graphics.TOP | Graphics.LEFT);
+        } else {
+            offscreenBuffer = null;
+            offscreenGraphics = null;
+            renderToGraphics(g, lw, lh);
+        }
+    }
+
+    private void renderToGraphics(Graphics g, int w, int h) {
         // Background
         g.setColor(0x0F172A);
         g.fillRect(0, 0, w, h);
 
-        // Header Bar (y: 0..24)
-        g.setColor(0x1E293B);
-        g.fillRect(0, 0, w, 24);
-        g.setColor(0x38BDF8);
-        g.setFont(fontSmallBold);
-        String hdr = isVideo ? "▶ KamTape 3GP/Video" : "♫ Audio Player";
-        g.drawString(hdr, 6, 4, Graphics.TOP | Graphics.LEFT);
-
-        // Title
-        g.setColor(0xF8FAFC);
-        g.setFont(fontSmallPlain);
-        String dispTitle = mediaTitle;
-        if (dispTitle.length() > 28) {
-            dispTitle = dispTitle.substring(0, 25) + "...";
-        }
-        g.drawString(dispTitle, 6, 28, Graphics.TOP | Graphics.LEFT);
-
-        // Visual Display Area (y: 44..188)
-        if (isVideo) {
-            // Draw video viewport (240x144)
+        // 1. Fullscreen Video Mode
+        if (isFullscreenVideo && isVideo) {
             if (currentVideoFrame != null) {
                 int imgW = currentVideoFrame.getWidth();
                 int imgH = currentVideoFrame.getHeight();
                 int imgX = (w - imgW) / 2;
-                int imgY = 44 + (144 - imgH) / 2;
+                int imgY = (h - imgH) / 2;
                 g.drawImage(currentVideoFrame, imgX, imgY, Graphics.TOP | Graphics.LEFT);
             } else if (videoControl == null) {
-                g.setColor(0x1E293B);
-                g.fillRect(0, 44, w, 144);
-                g.setColor(0x334155);
-                g.drawRect(0, 44, w - 1, 144);
                 g.setColor(0x38BDF8);
                 g.setFont(fontSmallBold);
-                g.drawString("[ Buffering 3GP / Video... ]", w / 2, 105, Graphics.HCENTER | Graphics.TOP);
+                g.drawString("[ Buffering Fullscreen Video... ]", w / 2, h / 2 - 8, Graphics.HCENTER | Graphics.TOP);
             }
-        } else {
-            drawEqualizer(g, 20, 50, w - 40, 120);
+
+            if (isPaused) {
+                g.setColor(0x000000);
+                g.fillRect(w / 2 - 90, h - 26, 180, 20);
+                g.setColor(0xFBBF24);
+                g.setFont(fontSmallBold);
+                g.drawString("[ PAUSED | 5: Play | *: Exit ]", w / 2, h - 23, Graphics.HCENTER | Graphics.TOP);
+            }
+            return;
         }
 
-        // Status Message
-        g.setColor(isPlaying ? 0x4ADE80 : 0xFBBF24);
-        g.setFont(fontSmallBold);
-        g.drawString("Status: " + statusMessage, w / 2, 194, Graphics.HCENTER | Graphics.TOP);
+        boolean land = (w >= 300);
 
-        // Progress Bar (y: 212)
-        int pbX = 16;
-        int pbY = 212;
-        int pbW = w - 32;
-        int pbH = 6;
-        g.setColor(0x334155);
-        g.fillRoundRect(pbX, pbY, pbW, pbH, 4, 4);
-
-        if (durationUs > 0) {
-            int fillW = (int) ((mediaTimeUs * pbW) / durationUs);
-            if (fillW > pbW) fillW = pbW;
+        if (land) {
+            // Widescreen Landscape Layout (320x240)
+            // Header Bar (y: 0..18)
+            g.setColor(0x1E293B);
+            g.fillRect(0, 0, w, 18);
             g.setColor(0x38BDF8);
-            g.fillRoundRect(pbX, pbY, fillW, pbH, 4, 4);
+            g.setFont(fontSmallBold);
+            String hdr = isVideo ? "▶ Video" : "♫ Audio";
+            g.drawString(hdr, 6, 2, Graphics.TOP | Graphics.LEFT);
+
+            g.setColor(0xF8FAFC);
+            g.setFont(fontSmallPlain);
+            String dispTitle = mediaTitle;
+            if (dispTitle.length() > 36) dispTitle = dispTitle.substring(0, 33) + "...";
+            g.drawString(dispTitle, 60, 2, Graphics.TOP | Graphics.LEFT);
+
+            // Viewport (y: 20..162)
+            int vidY = 20;
+            int vidH = 142;
+            if (isVideo) {
+                if (currentVideoFrame != null) {
+                    int imgW = currentVideoFrame.getWidth();
+                    int imgH = currentVideoFrame.getHeight();
+                    int imgX = (w - imgW) / 2;
+                    int imgY = vidY + (vidH - imgH) / 2;
+                    g.drawImage(currentVideoFrame, imgX, imgY, Graphics.TOP | Graphics.LEFT);
+                } else if (videoControl == null) {
+                    g.setColor(0x1E293B);
+                    g.fillRect((w - 248) / 2, vidY, 248, vidH);
+                    g.setColor(0x334155);
+                    g.drawRect((w - 248) / 2, vidY, 247, vidH);
+                    g.setColor(0x38BDF8);
+                    g.setFont(fontSmallBold);
+                    g.drawString("[ Buffering 3GP / Video... ]", w / 2, vidY + 58, Graphics.HCENTER | Graphics.TOP);
+                }
+            } else {
+                drawEqualizer(g, 20, vidY + 6, w - 40, vidH - 12);
+            }
+
+            // Status & Time indicators (y: 165)
+            g.setColor(isPlaying ? 0x4ADE80 : 0xFBBF24);
+            g.setFont(fontSmallBold);
+            g.drawString("Status: " + statusMessage, 12, 165, Graphics.TOP | Graphics.LEFT);
+
+            g.setColor(0x94A3B8);
+            g.setFont(fontSmallPlain);
+            String curTimeStr = formatTime(mediaTimeUs);
+            String durTimeStr = durationUs > 0 ? formatTime(durationUs) : "--:--";
+            g.drawString(curTimeStr + " / " + durTimeStr, w - 12, 165, Graphics.TOP | Graphics.RIGHT);
+
+            // Progress Bar (y: 179)
+            int pbX = 12;
+            int pbY = 179;
+            int pbW = w - 24;
+            int pbH = 5;
+            g.setColor(0x334155);
+            g.fillRoundRect(pbX, pbY, pbW, pbH, 4, 4);
+            if (durationUs > 0) {
+                int fillW = (int) ((mediaTimeUs * pbW) / durationUs);
+                if (fillW > pbW) fillW = pbW;
+                g.setColor(0x38BDF8);
+                g.fillRoundRect(pbX, pbY, fillW, pbH, 4, 4);
+            }
+
+            // Controls & Volume Bar (y: 191)
+            g.setColor(0xE2E8F0);
+            g.setFont(fontSmallPlain);
+            g.drawString("Vol: " + volumeLevel + "%", 12, 191, Graphics.TOP | Graphics.LEFT);
+            int volW = 50;
+            g.setColor(0x334155);
+            g.fillRect(68, 195, volW, 5);
+            g.setColor(0x22C55E);
+            g.fillRect(68, 195, (volumeLevel * volW) / 100, 5);
+
+            g.setColor(0x64748B);
+            g.drawString("5: Play | 4/6: Seek | *: Fullscreen", w - 12, 191, Graphics.TOP | Graphics.RIGHT);
+
+            // Bottom Softkeys Bar (y: 218..240)
+            int footY = h - 22;
+            g.setColor(0x1E293B);
+            g.fillRect(0, footY, w, 22);
+            g.setColor(0xF8FAFC);
+            g.setFont(fontSmallBold);
+            g.drawString("Stop", 6, footY + 3, Graphics.TOP | Graphics.LEFT);
+            if (isVideo) {
+                g.setColor(0x38BDF8);
+                g.drawString("Fullscreen (*)", w / 2, footY + 3, Graphics.HCENTER | Graphics.TOP);
+            }
+            g.setColor(0xF8FAFC);
+            g.drawString("Back", w - 6, footY + 3, Graphics.TOP | Graphics.RIGHT);
+
+        } else {
+            // Original Portrait Layout (240x320)
+            // Header Bar (y: 0..24)
+            g.setColor(0x1E293B);
+            g.fillRect(0, 0, w, 24);
+            g.setColor(0x38BDF8);
+            g.setFont(fontSmallBold);
+            String hdr = isVideo ? "▶ KamTape 3GP/Video" : "♫ Audio Player";
+            g.drawString(hdr, 6, 4, Graphics.TOP | Graphics.LEFT);
+
+            // Title
+            g.setColor(0xF8FAFC);
+            g.setFont(fontSmallPlain);
+            String dispTitle = mediaTitle;
+            if (dispTitle.length() > 28) {
+                dispTitle = dispTitle.substring(0, 25) + "...";
+            }
+            g.drawString(dispTitle, 6, 28, Graphics.TOP | Graphics.LEFT);
+
+            // Visual Display Area (y: 44..188)
+            if (isVideo) {
+                if (currentVideoFrame != null) {
+                    int imgW = currentVideoFrame.getWidth();
+                    int imgH = currentVideoFrame.getHeight();
+                    int imgX = (w - imgW) / 2;
+                    int imgY = 44 + (144 - imgH) / 2;
+                    g.drawImage(currentVideoFrame, imgX, imgY, Graphics.TOP | Graphics.LEFT);
+                } else if (videoControl == null) {
+                    g.setColor(0x1E293B);
+                    g.fillRect(0, 44, w, 144);
+                    g.setColor(0x334155);
+                    g.drawRect(0, 44, w - 1, 144);
+                    g.setColor(0x38BDF8);
+                    g.setFont(fontSmallBold);
+                    g.drawString("[ Buffering 3GP / Video... ]", w / 2, 105, Graphics.HCENTER | Graphics.TOP);
+                }
+            } else {
+                drawEqualizer(g, 20, 50, w - 40, 120);
+            }
+
+            // Status Message
+            g.setColor(isPlaying ? 0x4ADE80 : 0xFBBF24);
+            g.setFont(fontSmallBold);
+            g.drawString("Status: " + statusMessage, w / 2, 194, Graphics.HCENTER | Graphics.TOP);
+
+            // Progress Bar (y: 212)
+            int pbX = 16;
+            int pbY = 212;
+            int pbW = w - 32;
+            int pbH = 6;
+            g.setColor(0x334155);
+            g.fillRoundRect(pbX, pbY, pbW, pbH, 4, 4);
+
+            if (durationUs > 0) {
+                int fillW = (int) ((mediaTimeUs * pbW) / durationUs);
+                if (fillW > pbW) fillW = pbW;
+                g.setColor(0x38BDF8);
+                g.fillRoundRect(pbX, pbY, fillW, pbH, 4, 4);
+            }
+
+            // Time indicators
+            g.setColor(0x94A3B8);
+            g.setFont(fontSmallPlain);
+            String curTimeStr = formatTime(mediaTimeUs);
+            String durTimeStr = durationUs > 0 ? formatTime(durationUs) : "--:--";
+            g.drawString(curTimeStr, pbX, pbY + 8, Graphics.TOP | Graphics.LEFT);
+            g.drawString(durTimeStr, pbX + pbW, pbY + 8, Graphics.TOP | Graphics.RIGHT);
+
+            // Controls Bar
+            g.setColor(0xE2E8F0);
+            g.drawString("Vol: " + volumeLevel + "%", 16, 244, Graphics.TOP | Graphics.LEFT);
+            int volW = 60;
+            g.setColor(0x334155);
+            g.fillRect(80, 248, volW, 5);
+            g.setColor(0x22C55E);
+            g.fillRect(80, 248, (volumeLevel * volW) / 100, 5);
+
+            // Controls Help
+            g.setColor(0x64748B);
+            g.setFont(fontSmallPlain);
+            g.drawString("5: Play/Pause | 4/6: Seek | *: Fullscreen", w / 2, 270, Graphics.HCENTER | Graphics.TOP);
+
+            // Bottom Softkeys Bar
+            g.setColor(0x1E293B);
+            g.fillRect(0, 298, w, 22);
+            g.setColor(0xF8FAFC);
+            g.setFont(fontSmallBold);
+            g.drawString("Stop", 6, 302, Graphics.TOP | Graphics.LEFT);
+            g.drawString("Back", w - 6, 302, Graphics.TOP | Graphics.RIGHT);
         }
-
-        // Time indicators
-        g.setColor(0x94A3B8);
-        g.setFont(fontSmallPlain);
-        String curTimeStr = formatTime(mediaTimeUs);
-        String durTimeStr = durationUs > 0 ? formatTime(durationUs) : "--:--";
-        g.drawString(curTimeStr, pbX, pbY + 8, Graphics.TOP | Graphics.LEFT);
-        g.drawString(durTimeStr, pbX + pbW, pbY + 8, Graphics.TOP | Graphics.RIGHT);
-
-        // Controls Bar
-        g.setColor(0xE2E8F0);
-        g.drawString("Vol: " + volumeLevel + "%", 16, 244, Graphics.TOP | Graphics.LEFT);
-        int volW = 60;
-        g.setColor(0x334155);
-        g.fillRect(80, 248, volW, 5);
-        g.setColor(0x22C55E);
-        g.fillRect(80, 248, (volumeLevel * volW) / 100, 5);
-
-        // Controls Help
-        g.setColor(0x64748B);
-        g.setFont(fontSmallPlain);
-        g.drawString("5: Play/Pause | 4/6: Seek | 2/8: Vol", w / 2, 270, Graphics.HCENTER | Graphics.TOP);
-
-        // Bottom Softkeys Bar
-        g.setColor(0x1E293B);
-        g.fillRect(0, 298, w, 22);
-        g.setColor(0xF8FAFC);
-        g.setFont(fontSmallBold);
-        g.drawString("Stop", 6, 302, Graphics.TOP | Graphics.LEFT);
-        g.drawString("Back", w - 6, 302, Graphics.TOP | Graphics.RIGHT);
     }
 
     private void drawEqualizer(Graphics g, int x, int y, int width, int height) {

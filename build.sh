@@ -18,6 +18,7 @@ echo "[1/4] Compiling Java sources with Eclipse ECJ (CLDC 1.1 target)..."
 java -jar tools/ecj.jar \
   -source 1.3 \
   -target cldc1.1 \
+  -g:none \
   -nowarn \
   -bootclasspath tools/cldcapi11.jar:tools/midpapi20.jar:tools/mmapi-jsr135.jar \
   -d build/classes \

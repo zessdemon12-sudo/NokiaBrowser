@@ -327,6 +327,40 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
   - Verified `.gitignore` prevents cluttering repository with cached transcoded media.
   - Verified GitHub API returned `"key": "mit"` and `"name": "MIT License"` for the live repository.
 
+### Event 014: Landscape Mode Support (Native 320x240 & Software 90° Rotation)
+- **Date**: 2026-09-06T00:38:00Z
+- **Trigger**: User requested landscape mode: *"add landscape mode"*.
+- **Design & Architecture**:
+  1. **Dual Landscape Engine (`BrowserCanvas.java`)**:
+     - **Native Landscape (`getWidth() > getHeight()`)**: Dynamically triggered on wide-aspect hardware (Nokia E71, E63, E72, Communicator) and resizable emulators. Responds to `Canvas.sizeChanged(int w, int h)` to recompute layout across 312px content width (`page.performLayout`) with zero additional RAM or CPU overhead.
+     - **Software 90° Rotation (`Sprite.TRANS_ROT90`)**: On fixed 240x320 portrait devices (e.g. Nokia 6300), enabling Landscape mode allocates an offscreen buffer (`Image.createImage(320, 240)`) and rotates 90° clockwise via `g.drawRegion(offscreenBuffer, 0, 0, 320, 240, Sprite.TRANS_ROT90, 0, 0, Graphics.TOP | Graphics.LEFT)`. This allows users to turn their phone sideways (counter-clockwise with keypad held on the right).
+     - **Keypad Directional Translation**: In software rotation mode, physical D-pad directions are translated so physical RIGHT acts as UP, physical LEFT acts as DOWN, physical UP acts as LEFT, and physical DOWN acts as RIGHT.
+     - **Pointer / Touch Translation**: Physical `(px, py)` touch events are translated to logical `(lx = py, ly = pw - 1 - px)` coordinates.
+     - **Responsive Layout**: Adjusted header (20px) and footer (18px) for 240px height; converted `renderWelcomeScreen` into a 2-column layout to prevent vertical clipping.
+  2. **Widescreen & Fullscreen Video Player (`MediaPlayerCanvas.java`)**:
+     - Accepts `StorageManager` for orientation awareness.
+     - Automatically adapts UI layout for 320x240 landscape (18px header, 142px video viewport, compact progress bar, volume slider, and bottom softkeys bar).
+     - **Fullscreen Video Mode**: Added Key `*` shortcut to toggle borderless fullscreen video playback (`isFullscreenVideo`), centering 16:9 video with letterboxing and status overlay.
+     - Added software 90° rotation support for media playback on portrait hardware.
+     - Appends `&max_w=320&max_h=180` to `/video_stream` URL when in landscape mode.
+  3. **Gateway Server Video & Image Scaling (`server/video_streamer.py` & `server/server.js`)**:
+     - `server/video_streamer.py`: Updated CLI entrypoint to accept `sys.argv[4]` (`max_w`) and `sys.argv[5]` (`max_h`).
+     - `server/server.js`: `/video_stream` parses `max_w` and `max_h` from query params and passes them to `video_streamer.py`.
+     - `server/server.js`: `/image` accepts optional `w` query parameter and dynamically adjusts ffmpeg `scale='min(${maxWidth},iw)':-1`.
+  4. **Storage & Menu Controls (`StorageManager.java` & `BrowserMIDlet.java`)**:
+     - Added `ORIENTATION_AUTO = 0`, `ORIENTATION_PORTRAIT = 1`, `ORIENTATION_LANDSCAPE = 2`.
+     - Persisted in record 5 of `nb_settings` RMS store with backward-compatible migration.
+     - Added `"Toggle Landscape"` menu option to Browser Options Menu (`optionsList`), toggling between portrait and landscape.
+     - Added `"Orientation:"` choice group to Settings form (`choiceOrientation`).
+  5. **JAR Footprint Optimization**:
+     - Configured Eclipse ECJ compiler flags with `-g:none` in `build.sh`.
+     - Compiled `build/NokiaBrowser.jar` stands at **42,362 bytes** (~41.3 KB), leaving nearly 9 KB of safe headroom under the 50 KB ceiling.
+- **Verification**:
+  - Compiled with Eclipse ECJ targeting CLDC 1.1 / MIDP 2.0 with 0 errors and 0 warnings.
+  - Verified `GET /video_stream?...&max_w=320&max_h=180`: returns valid `NVID` header with 320x180 widescreen JPEG frames.
+  - Tested MicroEmulator launch in native 320x240 landscape mode (`--resizableDevice 320 240`).
+  - Tested MicroEmulator launch in 240x320 portrait mode (`--resizableDevice 240 320`).
+
 ---
 
 ## 4. Keypad Controls Reference (240x320 Nokia QVGA)
@@ -340,17 +374,26 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
 - **Key 3 / Key 9**: Jump directly to Top / Bottom of page.
 - **Key 4 / Key 6**: History Back / Forward.
 - **Key 0**: Open Bookmarks / Speed Dial.
-- **Key \***: Toggle Fullscreen Mode (hides top header & bottom softkey bars).
+- **Key \***: Toggle Fullscreen Mode (in Browser: hides header & footer; in Video Player: toggles 16:9 widescreen video fullscreen OSD).
 - **Key \#**: Open Search / URL input dialog.
-- **Left Softkey**: Open Browser Menu (Search, Bookmarks, History, FrogFind, Reload, Settings).
+- **Left Softkey**: Open Browser Menu (Search, Bookmarks, History, FrogFind, Reload, Toggle Landscape, Settings).
 - **Right Softkey**: Back / Exit.
 
 ### Multimedia Player Controls (`MediaPlayerCanvas`)
 - **Key 5 / Center D-Pad**: Toggle Play / Pause (controls both video frames and audio stream).
 - **Key 2 / Key 8 / D-Pad Up / Down**: Increase / Decrease Volume level (0% to 100%).
 - **Key 4 / Key 6**: Seek backward / forward by 5 seconds (reconnects both streams).
+- **Key \***: Toggle Fullscreen Video (expands video across full display, hiding top/bottom status bars).
 - **Left Softkey ("Stop")**: Stop media playback and return to browser.
 - **Right Softkey ("Back")**: Return to previous screen.
+
+### Landscape Mode Navigation (Software 90° Rotation)
+- When holding a portrait phone (240x320) sideways (counter-clockwise, keypad on right):
+  - Physical **UP** -> Logical **LEFT**
+  - Physical **DOWN** -> Logical **RIGHT**
+  - Physical **LEFT** -> Logical **DOWN**
+  - Physical **RIGHT** -> Logical **UP**
+  - Touch/Pointer: `(lx = py, ly = pw - 1 - px)`
 
 ---
 
@@ -362,10 +405,10 @@ cd /home/a1/Pictures/NokiaBrowser
 ./build.sh
 ```
 - **Compiler**: Eclipse ECJ (`tools/ecj.jar`)
-- **Flags**: `-source 1.3 -target cldc1.1 -nowarn`
+- **Flags**: `-source 1.3 -target cldc1.1 -g:none -nowarn`
 - **Classpath**: `tools/cldcapi11.jar:tools/midpapi20.jar:tools/mmapi-jsr135.jar`
 - **Output Files**:
-  - `build/NokiaBrowser.jar` (46,901 bytes)
+  - `build/NokiaBrowser.jar` (42,362 bytes)
   - `build/NokiaBrowser.jad`
 
 ### Launch Gateway Server

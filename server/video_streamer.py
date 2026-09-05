@@ -102,10 +102,12 @@ def stream_video(video_url, start_sec=0, target_fps=8, max_w=240, max_h=144):
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: python3 video_streamer.py <url> [start_sec] [fps]")
+        print("Usage: python3 video_streamer.py <url> [start_sec] [fps] [max_w] [max_h]")
         sys.exit(1)
 
     v_url = sys.argv[1]
     s_sec = float(sys.argv[2]) if len(sys.argv) > 2 else 0.0
     t_fps = int(sys.argv[3]) if len(sys.argv) > 3 else 8
-    stream_video(v_url, s_sec, t_fps)
+    m_w = int(sys.argv[4]) if len(sys.argv) > 4 else 240
+    m_h = int(sys.argv[5]) if len(sys.argv) > 5 else 144
+    stream_video(v_url, s_sec, t_fps, m_w, m_h)

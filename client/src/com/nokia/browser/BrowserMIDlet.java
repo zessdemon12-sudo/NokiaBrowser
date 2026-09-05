@@ -41,6 +41,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     private ChoiceGroup choiceImages;
     private ChoiceGroup choiceFontSize;
     private ChoiceGroup choiceSearchEngine;
+    private ChoiceGroup choiceOrientation;
 
     public static BrowserMIDlet instance;
     private boolean isStarted = false;
@@ -114,7 +115,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     }
 
     public void openMediaPlayer(String mediaUrl, String title, boolean isVideo) {
-        MediaPlayerCanvas playerCanvas = new MediaPlayerCanvas(display, canvas, mediaUrl, title, isVideo, storage.getGatewayUrl());
+        MediaPlayerCanvas playerCanvas = new MediaPlayerCanvas(display, canvas, mediaUrl, title, isVideo, storage);
         display.setCurrent(playerCanvas);
     }
 
@@ -225,6 +226,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         optionsList.append("Add to Bookmarks", null);
         optionsList.append("History", null);
         optionsList.append("Reload Page", null);
+        optionsList.append("Toggle Landscape", null);
         optionsList.append("Settings", null);
         optionsList.append("About", null);
         optionsList.append("Exit", null);
@@ -233,6 +235,14 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         optionsList.addCommand(cmdBack);
         optionsList.setCommandListener(this);
         display.setCurrent(optionsList);
+    }
+
+    public void toggleOrientation() {
+        boolean currentlyLand = canvas.isLandscape();
+        int newOrient = currentlyLand ? com.nokia.browser.storage.StorageManager.ORIENTATION_PORTRAIT : com.nokia.browser.storage.StorageManager.ORIENTATION_LANDSCAPE;
+        storage.setOrientation(newOrient);
+        canvas.relayoutPage();
+        display.setCurrent(canvas);
     }
 
     public void showBookmarks() {
@@ -288,6 +298,13 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         choiceSearchEngine.append("YouTube (Videos)", null);
         choiceSearchEngine.setSelectedIndex(storage.getSearchEngine(), true);
         settingsForm.append(choiceSearchEngine);
+
+        choiceOrientation = new ChoiceGroup("Orientation:", ChoiceGroup.EXCLUSIVE);
+        choiceOrientation.append("Auto (Screen Size)", null);
+        choiceOrientation.append("Portrait (240x320)", null);
+        choiceOrientation.append("Landscape (320x240)", null);
+        choiceOrientation.setSelectedIndex(storage.getOrientation(), true);
+        settingsForm.append(choiceOrientation);
 
         settingsForm.addCommand(cmdOk);
         settingsForm.addCommand(cmdCancel);
@@ -483,9 +500,10 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         loadUrl(canvas.getPage().url, false);
                     }
                 }
-                else if (idx == 9) showSettings();
-                else if (idx == 10) showAbout();
-                else if (idx == 11) exitBrowser();
+                else if (idx == 9) toggleOrientation();
+                else if (idx == 10) showSettings();
+                else if (idx == 11) showAbout();
+                else if (idx == 12) exitBrowser();
             } else if (c == cmdBack) {
                 display.setCurrent(canvas);
             }
@@ -522,7 +540,10 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                 int fs = choiceFontSize.getSelectedIndex();
                 storage.setFontSize(fs);
                 storage.setSearchEngine(choiceSearchEngine.getSelectedIndex());
+                int orient = choiceOrientation.getSelectedIndex();
+                storage.setOrientation(orient);
                 canvas.initFonts(fs);
+                canvas.relayoutPage();
                 display.setCurrent(canvas);
             } else if (c == cmdCancel) {
                 display.setCurrent(canvas);

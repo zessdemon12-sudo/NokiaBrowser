@@ -6,25 +6,30 @@ A high-performance modern web browser engineered specifically for vintage **Noki
 
 ## Key Features
 
-- **Pixel-Perfect 240x320 QVGA Rendering:** Tailored layout engine with automatic word wrapping, heading hierarchy, blockquotes, lists, and focus ring navigation.
+- **Pixel-Perfect 240x320 QVGA & 320x240 Landscape Rendering:** Tailored layout engine with automatic word wrapping, heading hierarchy, blockquotes, lists, and focus ring navigation.
+- **Landscape Mode Support:**
+  - **Native Landscape (320x240):** Auto-detected on wide-screen devices (Nokia E71, E63, E72, Communicator) or resized emulators with responsive `sizeChanged` layout and zero memory overhead.
+  - **Software 90° Rotation:** On fixed 240x320 portrait devices (Nokia 6300), selecting Landscape renders to a 320x240 buffer and rotates 90° (`TRANS_ROT90`) with rotated D-pad and touch coordinates so users can hold their phone sideways.
+  - **Widescreen Video Playback:** `MediaPlayerCanvas` expands video display to 320x180 widescreen (16:9) or 320x240 fullscreen, with dynamic high-resolution frame streaming.
+  - **Orientation Settings:** Persisted in RMS (`Auto`, `Portrait`, `Landscape`) and toggled via Menu -> `Toggle Landscape`.
 - **Modern HTTPS (TLS 1.2 & 1.3):** Transparently loads modern encrypted websites (Wikipedia, Bing, Hacker News, news portals, GitHub) that standard vintage J2ME devices cannot connect to directly.
 - **Multimedia Support (MMAPI):**
-  - **Audio Player:** Dedicated 240x320 audio player canvas with retro equalizer visualizer, elapsed/total time, volume slider (0-100%), and playback controls (MP3, WAV, AMR, AAC).
-  - **Video Player:** 3GP and MP4 video playback support with MMAPI `VideoControl` integration.
+  - **Audio Player:** Dedicated player canvas with retro equalizer visualizer, elapsed/total time, volume slider (0-100%), and playback controls (MP3, WAV, AMR, AAC).
+  - **Video Player:** 3GP, MP4, and real-time JPEG frame streaming (8 FPS) with MMAPI and synchronized WAV audio.
 - **Nokia Keypad & D-Pad Navigation:**
-  - **D-Pad Up / Down:** Jump between links and media cards or smooth scroll.
+  - **D-Pad Up / Down:** Jump between links and media cards or smooth scroll (auto-rotated in software landscape).
   - **D-Pad Center / Key 5:** Open selected link or launch media player.
   - **Key 1 / 7:** Fast Page Up / Page Down.
   - **Key 3 / 9:** Jump directly to Top / Bottom of page.
   - **Key 2 / 8:** Line scroll up / down.
   - **Key 4 / 6:** History Back / Forward.
   - **Key 0:** Instant Bookmarks dialog.
-  - **Key \*:** Toggle Fullscreen mode (maximizes 240x320 content).
+  - **Key \*:** Toggle Fullscreen mode (or fullscreen video in media player).
   - **Key #:** Quick URL entry & Search bar.
-  - **Left Softkey:** Options Menu.
+  - **Left Softkey:** Options Menu (Search, Bookmarks, History, Toggle Landscape, Settings).
   - **Right Softkey:** Back / Exit.
-- **Persistent Storage (RMS):** Bookmarks, history, and user settings saved to phone memory across restarts.
-- **Ultra-Lightweight Footprint:** The compiled client JAR is only **~34 KB**, preserving maximum Java heap RAM for smooth page rendering.
+- **Persistent Storage (RMS):** Bookmarks, history, search engines, and orientation saved to phone memory across restarts.
+- **Ultra-Lightweight Footprint:** The compiled client JAR is only **~42 KB**, preserving maximum Java heap RAM for smooth page rendering (comfortably under the 50 KB ceiling).
 
 ---
 

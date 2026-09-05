@@ -90,11 +90,22 @@ public class StorageManager {
     public static final int ENGINE_KAMTAPE  = 2;
     public static final int ENGINE_YOUTUBE  = 3;
 
+    public static final int ORIENTATION_AUTO      = 0;
+    public static final int ORIENTATION_PORTRAIT  = 1;
+    public static final int ORIENTATION_LANDSCAPE = 2;
+
     private int searchEngine = 0; // 0 = Bing, 1 = FrogFind, 2 = KamTape, 3 = YouTube
+    private int orientation = 0;  // 0 = Auto, 1 = Portrait (240x320), 2 = Landscape (320x240)
 
     public int getSearchEngine() { return searchEngine; }
     public void setSearchEngine(int engine) {
         this.searchEngine = engine;
+        saveSettings();
+    }
+
+    public int getOrientation() { return orientation; }
+    public void setOrientation(int o) {
+        this.orientation = o;
         saveSettings();
     }
 
@@ -112,6 +123,10 @@ public class StorageManager {
                 if (rs.getNumRecords() >= 4) {
                     byte[] b4 = rs.getRecord(4);
                     searchEngine = Integer.parseInt(new String(b4));
+                }
+                if (rs.getNumRecords() >= 5) {
+                    byte[] b5 = rs.getRecord(5);
+                    orientation = Integer.parseInt(new String(b5));
                 }
             } else {
                 saveSettings();
@@ -134,10 +149,12 @@ public class StorageManager {
             byte[] b2 = (loadImages ? "1" : "0").getBytes();
             byte[] b3 = String.valueOf(fontSize).getBytes();
             byte[] b4 = String.valueOf(searchEngine).getBytes();
+            byte[] b5 = String.valueOf(orientation).getBytes();
             rs.addRecord(b1, 0, b1.length);
             rs.addRecord(b2, 0, b2.length);
             rs.addRecord(b3, 0, b3.length);
             rs.addRecord(b4, 0, b4.length);
+            rs.addRecord(b5, 0, b5.length);
         } catch (Exception e) {
         } finally {
             closeRs(rs);

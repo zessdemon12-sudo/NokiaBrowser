@@ -646,14 +646,15 @@ const MAX_MEM_IMAGE_CACHE = 60;
  * Converts any image format (WebP, AVIF, JPEG, PNG, GIF, SVG) to a 220px-wide PNG
  * optimized for Nokia 240x320 QVGA screen and J2ME memory constraints.
  */
-async function handleImageProxy(res, targetUrl) {
+async function handleImageProxy(res, targetUrl, maxWidth = 220) {
     try {
         let cleanUrl = targetUrl;
         if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
             cleanUrl = 'https://' + cleanUrl;
         }
 
-        const cacheKey = Buffer.from(cleanUrl).toString('hex').substring(0, 24);
+        const cacheSuffix = (maxWidth !== 220) ? `_w${maxWidth}` : '';
+        const cacheKey = Buffer.from(cleanUrl + cacheSuffix).toString('hex').substring(0, 24);
 
         // 1. Fast in-memory cache lookup (< 1ms latency)
         if (imageMemoryCache.has(cacheKey)) {
@@ -712,12 +713,13 @@ async function handleImageProxy(res, targetUrl) {
             throw new Error('Empty image received');
         }
 
-        // Transcode to PNG max-width 220px using ffmpeg
+        // Transcode to PNG max-width using ffmpeg
         const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
+        const scaleFilter = `scale='min(${maxWidth},iw)':-1`;
         const ffmpeg = spawn(ffmpegPath, [
             '-y',
             '-i', 'pipe:0',
-            '-vf', "scale='min(220,iw)':-1",
+            '-vf', scaleFilter,
             '-vframes', '1',
             '-f', 'image2',
             '-c:v', 'png',
@@ -811,6 +813,8 @@ const server = http.createServer(async (req, res) => {
         let videoUrl = parsedUrl.searchParams.get('url');
         const startSec = parsedUrl.searchParams.get('t') || '0';
         const fps = parsedUrl.searchParams.get('fps') || '8';
+        const maxW = parsedUrl.searchParams.get('max_w') || '240';
+        const maxH = parsedUrl.searchParams.get('max_h') || '144';
 
         if (!videoUrl) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
@@ -838,10 +842,10 @@ const server = http.createServer(async (req, res) => {
             streamUrl = await resolveDirectVideoUrl(videoUrl);
         }
 
-        console.log(`[video_stream] Streaming frames from ${videoUrl} starting at ${startSec}s (fps=${fps})`);
+        console.log(`[video_stream] Streaming frames from ${videoUrl} starting at ${startSec}s (fps=${fps}, size=${maxW}x${maxH})`);
 
         const streamerPath = path.join(__dirname, 'video_streamer.py');
-        const child = spawn('python3', [streamerPath, streamUrl, startSec, fps]);
+        const child = spawn('python3', [streamerPath, streamUrl, startSec, fps, maxW, maxH]);
 
         res.writeHead(200, {
             'Content-Type': 'application/octet-stream',
@@ -1248,11 +1252,12 @@ const server = http.createServer(async (req, res) => {
     // Image Proxy
     if (pathname === '/image') {
         const imgUrl = parsedUrl.searchParams.get('url');
+        const maxW = parseInt(parsedUrl.searchParams.get('w') || '220');
         if (!imgUrl) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             return res.end('Missing image url');
         }
-        return handleImageProxy(res, imgUrl);
+        return handleImageProxy(res, imgUrl, maxW);
     }
 
     // Search (Bing, FrogFind, or KamTape)

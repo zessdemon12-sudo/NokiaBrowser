@@ -9,10 +9,11 @@ import javax.microedition.lcdui.Canvas;
 import javax.microedition.lcdui.Font;
 import javax.microedition.lcdui.Graphics;
 import javax.microedition.lcdui.Image;
+import javax.microedition.lcdui.game.Sprite;
 import java.util.Vector;
 
 /**
- * 240x320 QVGA Rendering Engine and Interactive Canvas for Nokia J2ME.
+ * 240x320 QVGA & 320x240 Landscape Rendering Engine and Interactive Canvas for Nokia J2ME.
  */
 public class BrowserCanvas extends Canvas {
 
@@ -32,6 +33,10 @@ public class BrowserCanvas extends Canvas {
     private int maxScrollY;
     private int selectedElementIndex;
     private boolean isFullscreen;
+
+    // Software Rotation Offscreen Buffers (for 240x320 portrait devices rotated to landscape)
+    private Image offscreenBuffer;
+    private Graphics offscreenGraphics;
 
     // Loading status
     private boolean isLoading;
@@ -66,6 +71,49 @@ public class BrowserCanvas extends Canvas {
         this.page = new WebPage();
     }
 
+    public boolean isLandscape() {
+        int o = storage.getOrientation();
+        if (o == StorageManager.ORIENTATION_LANDSCAPE) return true;
+        if (o == StorageManager.ORIENTATION_PORTRAIT) return false;
+        return getWidth() > getHeight();
+    }
+
+    public boolean isSoftwareRotation() {
+        return isLandscape() && (getWidth() < getHeight());
+    }
+
+    public int getLogicalWidth() {
+        if (isSoftwareRotation()) {
+            return getHeight() > 0 ? getHeight() : 320;
+        }
+        return getWidth() > 0 ? getWidth() : 240;
+    }
+
+    public int getLogicalHeight() {
+        if (isSoftwareRotation()) {
+            return getWidth() > 0 ? getWidth() : 240;
+        }
+        return getHeight() > 0 ? getHeight() : 320;
+    }
+
+    protected void sizeChanged(int w, int h) {
+        relayoutPage();
+    }
+
+    public void relayoutPage() {
+        if (regularFont != null && boldFont != null && titleFont != null) {
+            int lw = getLogicalWidth();
+            if (page != null) {
+                page.performLayout(regularFont, boldFont, titleFont, lw);
+            }
+            calculateMaxScroll();
+            if (selectedElementIndex >= 0 && page != null) {
+                ensureElementVisible(selectedElementIndex);
+            }
+        }
+        repaint();
+    }
+
     public void initFonts(int size) {
         int lcduiSize;
         if (size == 0) lcduiSize = Font.SIZE_SMALL;
@@ -79,7 +127,7 @@ public class BrowserCanvas extends Canvas {
         smallBoldFont = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
 
         if (page != null) {
-            page.performLayout(regularFont, boldFont, titleFont, getWidth());
+            page.performLayout(regularFont, boldFont, titleFont, getLogicalWidth());
             calculateMaxScroll();
         }
     }
@@ -99,7 +147,7 @@ public class BrowserCanvas extends Canvas {
         this.loadingStatus = "";
         this.scrollY = 0;
 
-        int w = getWidth() > 0 ? getWidth() : 240;
+        int w = getLogicalWidth();
         page.performLayout(regularFont, boldFont, titleFont, w);
         calculateMaxScroll();
 
@@ -169,15 +217,17 @@ public class BrowserCanvas extends Canvas {
     }
 
     private int getHeaderHeight() {
-        return isFullscreen ? 0 : 22;
+        if (isFullscreen) return 0;
+        return isLandscape() ? 20 : 22;
     }
 
     private int getFooterHeight() {
-        return isFullscreen ? 0 : 20;
+        if (isFullscreen) return 0;
+        return isLandscape() ? 18 : 20;
     }
 
     private int getViewportHeight() {
-        return getHeight() - getHeaderHeight() - getFooterHeight();
+        return getLogicalHeight() - getHeaderHeight() - getFooterHeight();
     }
 
     public void historyBack() {
@@ -201,6 +251,29 @@ public class BrowserCanvas extends Canvas {
         try {
             gameAction = getGameAction(keyCode);
         } catch (Exception e) {}
+
+        // In software landscape rotation (holding phone sideways with keypad on right):
+        // Physical UP points LEFT visually, physical DOWN points RIGHT visually,
+        // physical LEFT points DOWN visually, physical RIGHT points UP visually.
+        if (isSoftwareRotation()) {
+            int transCode = keyCode;
+            int transAction = gameAction;
+            if (gameAction == UP || keyCode == -1) {
+                transCode = -3;
+                transAction = LEFT;
+            } else if (gameAction == DOWN || keyCode == -2) {
+                transCode = -4;
+                transAction = RIGHT;
+            } else if (gameAction == LEFT || keyCode == -3) {
+                transCode = -2;
+                transAction = DOWN;
+            } else if (gameAction == RIGHT || keyCode == -4) {
+                transCode = -1;
+                transAction = UP;
+            }
+            keyCode = transCode;
+            gameAction = transAction;
+        }
 
         // Left Softkey: Menu / Options
         if (keyCode == -6) {
@@ -386,16 +459,26 @@ public class BrowserCanvas extends Canvas {
     }
 
     protected void pointerPressed(int x, int y) {
+        int lx = x;
+        int ly = y;
+        if (isSoftwareRotation()) {
+            int pw = getWidth();
+            lx = y;
+            ly = pw - 1 - x;
+        }
+
+        int lw = getLogicalWidth();
+        int lh = getLogicalHeight();
         int headerH = getHeaderHeight();
         int footerH = getFooterHeight();
 
-        if (!isFullscreen && y < headerH) {
+        if (!isFullscreen && ly < headerH) {
             midlet.showAddressDialog(page != null ? page.url : "");
             return;
         }
 
-        if (!isFullscreen && y > getHeight() - footerH) {
-            if (x < getWidth() / 2) {
+        if (!isFullscreen && ly > lh - footerH) {
+            if (lx < lw / 2) {
                 midlet.showOptionsMenu();
             } else {
                 if (historyIndex > 0) historyBack();
@@ -404,7 +487,7 @@ public class BrowserCanvas extends Canvas {
             return;
         }
 
-        int pageY = y - headerH + scrollY;
+        int pageY = ly - headerH + scrollY;
         int count = page.getElementCount();
         for (int i = 0; i < count; i++) {
             PageElement el = page.getElement(i);
@@ -420,9 +503,24 @@ public class BrowserCanvas extends Canvas {
     }
 
     protected void paint(Graphics g) {
-        int w = getWidth();
-        int h = getHeight();
+        int lw = getLogicalWidth();
+        int lh = getLogicalHeight();
 
+        if (isSoftwareRotation()) {
+            if (offscreenBuffer == null || offscreenBuffer.getWidth() != lw || offscreenBuffer.getHeight() != lh) {
+                offscreenBuffer = Image.createImage(lw, lh);
+                offscreenGraphics = offscreenBuffer.getGraphics();
+            }
+            renderToGraphics(offscreenGraphics, lw, lh);
+            g.drawRegion(offscreenBuffer, 0, 0, lw, lh, Sprite.TRANS_ROT90, 0, 0, Graphics.TOP | Graphics.LEFT);
+        } else {
+            offscreenBuffer = null;
+            offscreenGraphics = null;
+            renderToGraphics(g, lw, lh);
+        }
+    }
+
+    private void renderToGraphics(Graphics g, int w, int h) {
         int headerH = getHeaderHeight();
         int footerH = getFooterHeight();
         int vh = h - headerH - footerH;
@@ -695,35 +793,53 @@ public class BrowserCanvas extends Canvas {
     }
 
     private void renderWelcomeScreen(Graphics g, int headerH, int vh, int w) {
-        int startY = headerH + 16;
+        boolean land = isLandscape();
+        int startY = headerH + (land ? 4 : 16);
         g.setFont(titleFont);
         g.setColor(0x0F2942);
         g.drawString("Nokia Web", w / 2, startY, Graphics.HCENTER | Graphics.TOP);
 
         g.setFont(smallFont);
         g.setColor(0x64748B);
-        g.drawString("Modern HTTPS & Media Browser", w / 2, startY + 24, Graphics.HCENTER | Graphics.TOP);
-        g.drawString("Screen: 240 x 320 QVGA", w / 2, startY + 38, Graphics.HCENTER | Graphics.TOP);
+        int subY = startY + (land ? 20 : 24);
+        g.drawString("Modern HTTPS & Media Browser", w / 2, subY, Graphics.HCENTER | Graphics.TOP);
+        String screenStr = land ? "Screen: 320 x 240 Landscape" : "Screen: 240 x 320 QVGA";
+        g.drawString(screenStr, w / 2, subY + 14, Graphics.HCENTER | Graphics.TOP);
 
-        int boxY = startY + 56;
+        int boxY = subY + (land ? 26 : 34);
+        int boxH = land ? 112 : 150;
         g.setColor(0xF1F5F9);
-        g.fillRoundRect(10, boxY, w - 20, 150, 8, 8);
+        g.fillRoundRect(10, boxY, w - 20, boxH, 8, 8);
         g.setColor(0xCBD5E1);
-        g.drawRoundRect(10, boxY, w - 20, 150, 8, 8);
+        g.drawRoundRect(10, boxY, w - 20, boxH, 8, 8);
 
         g.setColor(0x0F172A);
         g.setFont(boldFont);
-        g.drawString("Quick Keypad Controls:", 18, boxY + 8, Graphics.TOP | Graphics.LEFT);
+        g.drawString("Quick Keypad Controls:", 18, boxY + 6, Graphics.TOP | Graphics.LEFT);
 
         g.setFont(smallFont);
         g.setColor(0x334155);
-        int ly = boxY + 26;
-        g.drawString("• [#] Enter URL / Search", 18, ly, Graphics.TOP | Graphics.LEFT);
-        g.drawString("• [0] Open Bookmarks", 18, ly + 16, Graphics.TOP | Graphics.LEFT);
-        g.drawString("• [*] Toggle Fullscreen", 18, ly + 32, Graphics.TOP | Graphics.LEFT);
-        g.drawString("• [5 / Fire] Open Link / Play", 18, ly + 48, Graphics.TOP | Graphics.LEFT);
-        g.drawString("• [1 / 7] Page Up / Down", 18, ly + 64, Graphics.TOP | Graphics.LEFT);
-        g.drawString("• [4 / 6] History Back / Fwd", 18, ly + 80, Graphics.TOP | Graphics.LEFT);
-        g.drawString("• [Left Softkey] Full Menu", 18, ly + 96, Graphics.TOP | Graphics.LEFT);
+        if (land) {
+            int ly1 = boxY + 22;
+            int col2X = w / 2 + 10;
+            g.drawString("• [#] Enter URL / Search", 18, ly1, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [0] Open Bookmarks", 18, ly1 + 16, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [*] Toggle Fullscreen", 18, ly1 + 32, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [5 / Fire] Select / Play", 18, ly1 + 48, Graphics.TOP | Graphics.LEFT);
+
+            g.drawString("• [1 / 7] Page Up / Down", col2X, ly1, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [4 / 6] History Back / Fwd", col2X, ly1 + 16, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [2 / 8] Scroll Line", col2X, ly1 + 32, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [Left Softkey] Full Menu", col2X, ly1 + 48, Graphics.TOP | Graphics.LEFT);
+        } else {
+            int ly = boxY + 26;
+            g.drawString("• [#] Enter URL / Search", 18, ly, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [0] Open Bookmarks", 18, ly + 16, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [*] Toggle Fullscreen", 18, ly + 32, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [5 / Fire] Open Link / Play", 18, ly + 48, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [1 / 7] Page Up / Down", 18, ly + 64, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [4 / 6] History Back / Fwd", 18, ly + 80, Graphics.TOP | Graphics.LEFT);
+            g.drawString("• [Left Softkey] Full Menu", 18, ly + 96, Graphics.TOP | Graphics.LEFT);
+        }
     }
 }
