@@ -1,0 +1,8 @@
+MIDlet-1: Nokia Web, /icon.png, com.nokia.browser.BrowserMIDlet
+MIDlet-Name: Nokia Web
+MIDlet-Vendor: Antigravity
+MIDlet-Version: 1.0.0
+MicroEdition-Configuration: CLDC-1.1
+MicroEdition-Profile: MIDP-2.0
+MIDlet-Jar-URL: NokiaBrowser.jar
+MIDlet-Jar-Size: 46901

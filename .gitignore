@@ -1,0 +1,20 @@
+# Build classes
+build/classes/
+
+# Server caches & temporary media
+server/cache/3gp/*
+!server/cache/3gp/.gitkeep
+server/cache/audio/*
+!server/cache/audio/.gitkeep
+server/cache/images/*
+!server/cache/images/.gitkeep
+
+# Logs & temp files
+*.log
+test_nokia.3gp
+tools/*.bak
+.DS_Store
+
+# Python bytecode
+__pycache__/
+*.py[cod]
