@@ -925,16 +925,27 @@ const server = http.createServer(async (req, res) => {
         videoUrl = decodeURIComponent(videoUrl);
         console.log(`[video_stream] Streaming from ${videoUrl} starting at ${startSec}s (${maxW}x${maxH} @ ${fps}fps)`);
 
+        const isDataSaver = req.headers['x-nokia-data-saver'] === '1' || parsedUrl.searchParams.get('ds') === '1';
+        const qv = isDataSaver ? '9' : '7';
+        const reqFps = parseFloat(fps) || (isDataSaver ? 8.0 : 12.0);
+        const targetFps = Math.min(15.0, Math.max(5.0, reqFps));
+        const frameIntervalMs = Math.max(40, Math.round(1000.0 / targetFps));
+
         const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
-        const ffmpegArgs = ['-y'];
+        const ffmpegArgs = [
+            '-y',
+            '-threads', '2',
+            '-fflags', 'nobuffer+fastseek',
+            '-flags', 'low_delay'
+        ];
         const sSec = parseFloat(startSec) || 0;
         if (sSec > 0) {
             ffmpegArgs.push('-ss', startSec);
         }
         ffmpegArgs.push(
             '-i', 'pipe:0',
-            '-vf', `scale=${maxW}:${maxH}:force_original_aspect_ratio=decrease,pad=${maxW}:${maxH}:(ow-iw)/2:(oh-ih)/2,fps=${fps}`,
-            '-q:v', '5',
+            '-vf', `scale=${maxW}:${maxH}:force_original_aspect_ratio=decrease,pad=${maxW}:${maxH}:(ow-iw)/2:(oh-ih)/2,fps=${targetFps}`,
+            '-q:v', qv,
             '-f', 'image2pipe',
             '-vcodec', 'mjpeg',
             'pipe:1'
@@ -984,8 +995,6 @@ const server = http.createServer(async (req, res) => {
 
         let imgBuffer = Buffer.alloc(0);
         let frameCount = 0;
-        const targetFps = parseFloat(fps) || 8.0;
-        const frameIntervalMs = Math.max(50, Math.round(1000.0 / targetFps));
 
         const frameQueue = [];
         let timer = null;
@@ -1001,8 +1010,8 @@ const server = http.createServer(async (req, res) => {
                 res.write(item.frameHeader);
                 res.write(item.frameData);
 
-                // Resume FFmpeg if queue has drained and was paused
-                if (frameQueue.length < 3 && !ffmpegClosed && ffmpeg.stdout.isPaused()) {
+                // Resume FFmpeg if queue has drained below 4 frames
+                if (frameQueue.length < 4 && !ffmpegClosed && ffmpeg.stdout.isPaused()) {
                     ffmpeg.stdout.resume();
                 }
             } else if (ffmpegClosed) {
@@ -1016,7 +1025,7 @@ const server = http.createServer(async (req, res) => {
             }
         }
 
-        // Send 1 frame every 125ms (8 fps)
+        // Send frames at target interval (12 fps = 83ms)
         timer = setInterval(pumpFrame, frameIntervalMs);
 
         ffmpeg.stdout.on('data', (chunk) => {
@@ -1050,13 +1059,13 @@ const server = http.createServer(async (req, res) => {
 
                 frameQueue.push({ frameHeader, frameData });
 
-                // Send first frame immediately to start playback without delay
-                if (frameCount === 1) {
+                // Burst send initial 3 frames immediately so client begins decoding right away
+                if (frameCount <= 3) {
                     pumpFrame();
                 }
 
-                // Pause FFmpeg if queue has 4 frames buffered (500ms) to throttle encoding rate
-                if (frameQueue.length >= 4 && !ffmpeg.stdout.isPaused()) {
+                // Pause FFmpeg if queue has 8 frames buffered (~650ms cushion)
+                if (frameQueue.length >= 8 && !ffmpeg.stdout.isPaused()) {
                     ffmpeg.stdout.pause();
                 }
             }

@@ -52,6 +52,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     private int volumeLevel; // 0 to 100
     private long durationUs; // microseconds
     private long mediaTimeUs;
+    private long audioStartWallTime;
 
     // Software Rotation Offscreen Buffers (for 240x320 portrait devices rotated to landscape)
     private Image offscreenBuffer;
@@ -310,6 +311,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                     if (dur > 0) durationUs = dur;
                 }
                 player.start();
+                audioStartWallTime = System.currentTimeMillis();
                 if (!isVideo) {
                     isPlaying = true;
                     statusMessage = "Playing";
@@ -428,22 +430,32 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                 }
 
                 // Synchronize video frame with companion audio player:
-                // Network socket read (streamDis.readInt) already paces arrival at 125ms (8 FPS).
-                // Only throttle if video has drifted severely ahead of audio (>500ms),
-                // and skip rendering if video is lagging behind audio (<-300ms).
+                // Network socket read (streamDis.readInt) already paces arrival at target FPS (12 FPS).
+                // Use hybrid MMAPI + wall-clock tracking so TIME_UNKNOWN (-1) never causes stutter.
                 boolean skipRender = false;
+                long aMs = -1;
                 if (player != null) {
                     try {
                         if (player.getState() == Player.STARTED) {
-                            long aMs = player.getMediaTime() / 1000L;
-                            long d = (long) curMs - aMs;
-                            if (d > 500) {
-                                Thread.sleep(Math.min(d - 400, 100L));
-                            } else if (d < -300) {
-                                skipRender = true;
+                            long mapiTime = player.getMediaTime();
+                            if (mapiTime >= 0) {
+                                aMs = mapiTime / 1000L;
                             }
                         }
                     } catch (Throwable t) {}
+                }
+                if (aMs < 0 && audioStartWallTime > 0) {
+                    aMs = System.currentTimeMillis() - audioStartWallTime;
+                }
+                if (aMs >= 0) {
+                    long d = (long) curMs - aMs;
+                    if (d > 350) {
+                        try {
+                            Thread.sleep(Math.min(d - 250, 60L));
+                        } catch (Exception e) {}
+                    } else if (d < -250) {
+                        skipRender = true;
+                    }
                 }
 
                 if (!skipRender) {
@@ -451,8 +463,13 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                         Image frame = Image.createImage(frameBuffer, 0, len);
                         this.currentVideoFrame = frame;
                         this.mediaTimeUs = (long) curMs * 1000L;
-                        // Full canvas repaint so video, progress bar, and status update cleanly in portrait/landscape
-                        repaint();
+                        if (isFullscreenVideo) {
+                            repaint();
+                        } else if (isLandscape()) {
+                            repaint(12, 20, getLogicalWidth() - 24, 142);
+                        } else {
+                            repaint(0, 44, getLogicalWidth(), 144);
+                        }
                     } catch (Throwable t) {
                         // Frame decode skip
                     }
@@ -488,7 +505,8 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         char sep = (base.indexOf('?') >= 0) ? '&' : '?';
         String sizeParam = isLandscape() ? "&max_w=320&max_h=180" : "&max_w=240&max_h=144";
         String durParam = (durationUs > 0 && base.indexOf("dur=") < 0) ? ("&dur=" + (durationUs / 1000000L)) : "";
-        return base + sep + "t=" + startSec + "&fps=8" + sizeParam + durParam;
+        String fpsParam = (simManager != null && simManager.isDataSaver()) ? "&fps=8" : "&fps=12";
+        return base + sep + "t=" + startSec + fpsParam + sizeParam + durParam;
     }
 
     private String buildAudioUrl(String rawUrl, long startSec) {
@@ -538,12 +556,16 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     public void run() {
         while (running) {
             if (isVideo) {
-                // When playing video, UI only needs progress bar updates at 1 Hz
+                // When playing video, UI only needs progress bar and time updates at 1 Hz
                 try {
                     Thread.sleep(1000);
                 } catch (InterruptedException e) {}
-                if (running && isPlaying && !isPaused) {
-                    repaint(16, 210, getWidth() - 32, 28);
+                if (running && isPlaying && !isPaused && !isFullscreenVideo) {
+                    if (isLandscape()) {
+                        repaint(12, 160, getLogicalWidth() - 24, 35);
+                    } else {
+                        repaint(16, 205, getLogicalWidth() - 32, 45);
+                    }
                 }
             } else {
                 // Audio equalizer animation at ~7 FPS
