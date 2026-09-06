@@ -739,7 +739,10 @@ public class BrowserCanvas extends Canvas {
 
         boolean isHttps = (page != null && page.isHttps);
         g.setFont(smallBoldFont);
-        if (isHttps) {
+        if (page != null && page.url != null && page.url.startsWith("ftp://")) {
+            g.setColor(0x38BDF8);
+            g.drawString("F", 4, 3, Graphics.TOP | Graphics.LEFT);
+        } else if (isHttps) {
             g.setColor(0x22C55E);
             g.drawString("S", 4, 3, Graphics.TOP | Graphics.LEFT);
         } else {

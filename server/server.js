@@ -22,6 +22,7 @@ const kamtape = require('./kamtape');
 const frogfind = require('./frogfind');
 const youtube = require('./youtube');
 const { execFile } = require('child_process');
+const ftp = require('./ftp');
 
 const directStreamUrlCache = new Map();
 const inFlight3gpTranscodes = new Map();
@@ -1716,7 +1717,12 @@ const server = http.createServer(async (req, res) => {
             'L:search:kamtape\t🔍 KamTape Video Search',
             'L:https://www.kamtape.com\tKamTape.com Videos',
             'L:https://www.bing.com\tBing Search',
-            'L:https://en.wikipedia.org/wiki/Nokia\tWikipedia: Nokia'
+            'L:https://en.wikipedia.org/wiki/Nokia\tWikipedia: Nokia',
+            'HR:',
+            'H2:FTP & Web Archives',
+            'L:ftp://test.rebex.net\t📁 Rebex Public Test FTP',
+            'L:http://info.cern.ch\t🌐 First Website Ever (CERN HTTP)',
+            'L:http://textfiles.com\t📜 TextFiles.com (Retro HTTP Archive)'
         ].join('\n');
 
         res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -1737,7 +1743,12 @@ const server = http.createServer(async (req, res) => {
             return res.end();
         }
 
-        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+        let autoPrefixedHttps = false;
+        if (ftp.isFtpUrl(targetUrl)) {
+            return ftp.handleFtpRequest(targetUrl, req, res, gatewayHost);
+        }
+
+        if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://') && !targetUrl.startsWith('ftp://')) {
             if (targetUrl === 'frogfind' || targetUrl.startsWith('frogfind/')) {
                 targetUrl = 'https://www.frogfind.com' + targetUrl.substring(8);
             } else if (targetUrl === 'kamtape' || targetUrl.startsWith('kamtape/')) {
@@ -1787,9 +1798,17 @@ const server = http.createServer(async (req, res) => {
                        targetUrl === 'robi.com.bd' || targetUrl.startsWith('robi.com.bd/')) {
                 const sub = targetUrl.includes('/') ? targetUrl.substring(targetUrl.indexOf('/')) : '';
                 targetUrl = 'http://wap.robi.com.bd' + sub;
+            } else if (targetUrl.startsWith('ftp.') || targetUrl.includes('.ftp.')) {
+                targetUrl = 'ftp://' + targetUrl;
             } else {
+                autoPrefixedHttps = true;
                 targetUrl = 'https://' + targetUrl;
             }
+        }
+
+        // Check again in case prefixing created an FTP url
+        if (ftp.isFtpUrl(targetUrl)) {
+            return ftp.handleFtpRequest(targetUrl, req, res, gatewayHost);
         }
 
         // Special Robi-INTERNET mobile WAP portal integration (Robi Axiata)
@@ -1813,15 +1832,41 @@ const server = http.createServer(async (req, res) => {
             return youtube.handleYouTubeRequest(targetUrl, res, gatewayHost, decodeHtmlEntities);
         }
 
-        // General Web Page
+        // General Web Page (HTTP/HTTPS with automatic fallback)
         try {
-            console.log('Fetching HTTPS web page:', targetUrl);
-            const resp = await fetch(targetUrl, {
-                headers: {
-                    'User-Agent': USER_AGENT,
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+            console.log('Fetching web page:', targetUrl);
+            let resp;
+            const httpsController = new AbortController();
+            const httpsTimeout = setTimeout(() => httpsController.abort(), 4000);
+            try {
+                resp = await fetch(targetUrl, {
+                    headers: {
+                        'User-Agent': USER_AGENT,
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                    },
+                    signal: httpsController.signal
+                });
+                clearTimeout(httpsTimeout);
+            } catch (fetchErr) {
+                clearTimeout(httpsTimeout);
+                if (autoPrefixedHttps && targetUrl.startsWith('https://')) {
+                    const fallbackHttp = 'http://' + targetUrl.substring(8);
+                    console.log('HTTPS connection failed, retrying over HTTP:', fallbackHttp);
+                    const httpController = new AbortController();
+                    const httpTimeout = setTimeout(() => httpController.abort(), 8000);
+                    resp = await fetch(fallbackHttp, {
+                        headers: {
+                            'User-Agent': USER_AGENT,
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+                        },
+                        signal: httpController.signal
+                    });
+                    clearTimeout(httpTimeout);
+                } else {
+                    throw fetchErr;
                 }
-            });
+            }
+
             const html = await resp.text();
             const finalUrl = resp.url || targetUrl;
             const isHttps = finalUrl.startsWith('https://');
@@ -1842,6 +1887,16 @@ const server = http.createServer(async (req, res) => {
             res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
             return res.end('META:TITLE=Page Error\nMETA:HTTPS=0\nH1:Connection Error\nP:Could not load ' + targetUrl + '\nP:Reason: ' + e.message + '\nHR:\nL:http://' + gatewayHost + '/\tGateway Home');
         }
+    }
+
+    // FTP Direct Binary Download
+    if (pathname === '/ftp_download') {
+        const downloadUrl = parsedUrl.searchParams.get('url');
+        if (!downloadUrl) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            return res.end('Missing url parameter');
+        }
+        return ftp.handleFtpDownload(req, res, downloadUrl);
     }
 
     // 3GP Mobile Video Streamer (Nokia S40/S60 Hardware Format)

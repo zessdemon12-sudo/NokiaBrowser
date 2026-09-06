@@ -177,7 +177,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     // UI Dialogs
     public void showAddressDialog(String initialUrl) {
         if (initialUrl == null || initialUrl.length() == 0) {
-            initialUrl = "https://";
+            initialUrl = "http://";
         }
         addressBox = new TextBox("Enter URL / Search", initialUrl, 500, TextField.ANY);
         addressBox.addCommand(cmdOk);
@@ -520,6 +520,32 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         loadUrl("http://wap.robi.com.bd", true);
                         return;
                     }
+                    // 5. FTP routing
+                    if (lower.startsWith("ftp ") || lower.startsWith("ftp:")) {
+                        String f = target.substring(4).trim();
+                        while (f.startsWith("/")) f = f.substring(1);
+                        if (f.length() > 0) {
+                            loadUrl("ftp://" + f, true);
+                        } else {
+                            loadUrl("ftp://test.rebex.net", true);
+                        }
+                        return;
+                    }
+                    if (norm.startsWith("ftp.") && target.indexOf("://") < 0) {
+                        loadUrl("ftp://" + target, true);
+                        return;
+                    }
+
+                    // 6. Plain HTTP routing
+                    if (lower.startsWith("http ") || lower.startsWith("http:")) {
+                        String h = target.substring(5).trim();
+                        while (h.startsWith("/")) h = h.substring(1);
+                        if (h.length() > 0) {
+                            loadUrl("http://" + h, true);
+                            return;
+                        }
+                    }
+
                     if (lower.startsWith("search ") || lower.startsWith("? ")) {
                         int sp = target.indexOf(' ');
                         String q = target.substring(sp + 1).trim();

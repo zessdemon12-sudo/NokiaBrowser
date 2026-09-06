@@ -288,6 +288,7 @@ public class StorageManager {
                 addBookmarkMemory("Hacker News", "https://news.ycombinator.com");
                 addBookmarkMemory("BBC News", "https://www.bbc.com/news");
                 addBookmarkMemory("The Old Net", "https://theoldnet.com");
+                addBookmarkMemory("Rebex Public Test FTP", "ftp://test.rebex.net");
                 addBookmarkMemory("Sample Media Page", "http://127.0.0.1:8080/sample_media");
                 needsSave = true;
             } else {
@@ -339,6 +340,10 @@ public class StorageManager {
                 }
                 if (!bookmarkUrls.contains("https://www.youtube.com")) {
                     addBookmarkMemory("YouTube Videos", "https://www.youtube.com");
+                    needsSave = true;
+                }
+                if (!bookmarkUrls.contains("ftp://test.rebex.net")) {
+                    addBookmarkMemory("Rebex Public Test FTP", "ftp://test.rebex.net");
                     needsSave = true;
                 }
             }
