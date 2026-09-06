@@ -23,9 +23,10 @@ if (!fs.existsSync(BORE_PATH)) {
     }
 }
 
-console.log('Starting cellular tunnel to port ' + LOCAL_PORT + ' via bore.pub...');
+const TARGET_REMOTE_PORT = process.env.BORE_PORT || '28080';
+console.log('Starting cellular tunnel to port ' + LOCAL_PORT + ' via bore.pub (port ' + TARGET_REMOTE_PORT + ')...');
 
-const proc = spawn(BORE_PATH, ['local', LOCAL_PORT, '--to', 'bore.pub'], {
+const proc = spawn(BORE_PATH, ['local', LOCAL_PORT, '--to', 'bore.pub', '--port', TARGET_REMOTE_PORT], {
     stdio: ['ignore', 'pipe', 'pipe']
 });
 

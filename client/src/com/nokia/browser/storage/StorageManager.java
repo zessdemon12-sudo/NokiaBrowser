@@ -21,7 +21,7 @@ public class StorageManager {
     private Vector historyList;
 
     public StorageManager() {
-        this.gatewayUrl = "http://127.0.0.1:8080";
+        this.gatewayUrl = "http://bore.pub:28080";
         this.loadImages = true;
         this.fontSize = 1;
 
@@ -176,6 +176,7 @@ public class StorageManager {
 
     private void loadSettings() {
         RecordStore rs = null;
+        boolean needsSave = false;
         try {
             rs = RecordStore.openRecordStore(RS_SETTINGS, true);
             if (rs.getNumRecords() >= 3) {
@@ -183,6 +184,10 @@ public class StorageManager {
                 byte[] b2 = rs.getRecord(2);
                 byte[] b3 = rs.getRecord(3);
                 gatewayUrl = new String(b1);
+                if (gatewayUrl != null && (gatewayUrl.indexOf("127.0.0.1") >= 0 || gatewayUrl.indexOf("localhost") >= 0)) {
+                    gatewayUrl = "http://bore.pub:28080";
+                    needsSave = true;
+                }
                 loadImages = "1".equals(new String(b2));
                 fontSize = Integer.parseInt(new String(b3));
                 if (rs.getNumRecords() >= 4) {
@@ -221,6 +226,9 @@ public class StorageManager {
             // Keep defaults
         } finally {
             closeRs(rs);
+        }
+        if (needsSave) {
+            saveSettings();
         }
     }
 
