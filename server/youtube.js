@@ -214,10 +214,8 @@ async function searchYouTube(query, count = 15) {
                 let desc = item.description || '';
                 if (desc.length > 75) desc = desc.substring(0, 72) + '...';
 
-                let thumb = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
-                if (item.thumbnails && item.thumbnails.length > 0) {
-                    thumb = item.thumbnails[0].url;
-                }
+                // Use permanent, non-expiring 320x180 16:9 canonical mqdefault thumbnail
+                const thumb = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 
                 results.push({
                     id,
@@ -271,7 +269,7 @@ async function getVideoInfo(videoId) {
             durationSec: durationSec,
             uploadDate: data.upload_date ? `${data.upload_date.substring(0,4)}-${data.upload_date.substring(4,6)}-${data.upload_date.substring(6,8)}` : '',
             desc: data.description || '',
-            thumb: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+            thumb: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
         };
 
         videoInfoCache.set(videoId, { timestamp: now, data: info });
@@ -286,7 +284,7 @@ async function getVideoInfo(videoId) {
             duration: '',
             uploadDate: '',
             desc: '',
-            thumb: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
+            thumb: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`
         };
     }
 }

@@ -45,7 +45,7 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
         }
 
         // Thumbnail
-        const stillUrl = `http://www.kamtape.com/get_still?video_id=${videoId}`;
+        const stillUrl = `https://www.kamtape.com/get_still?video_id=${videoId}`;
         const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(stillUrl)}`;
 
         // Video Stream (KamTape webm=1 serves baseline MP4)
@@ -141,8 +141,23 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
         if (seenVideos[vId]) continue;
         seenVideos[vId] = true;
 
-        const thumbMatch = block.match(/<img\b[^>]*src=["\x27](https?:\/\/[^"\x27]+)["\x27]/i);
-        const thumbUrl = thumbMatch ? thumbMatch[1] : `http://www.kamtape.com/get_still?video_id=${vId}`;
+        // Match thumbnail specifically inside watch link, with vimg class, or /vi/ path
+        const thumbMatch = block.match(/<a\b[^>]*href=["\x27]\/watch\?v=[^"\x27]+["\x27][^>]*>\s*<img\b[^>]*src=["\x27]([^"\x27]+)["\x27]/i) ||
+                           block.match(/<img\b[^>]*class=["\x27][^"\x27]*vimg[^"\x27]*["\x27][^>]*src=["\x27]([^"\x27]+)["\x27]/i) ||
+                           block.match(/<img\b[^>]*src=["\x27]([^"\x27]*\/vi\/[^"\x27]+)["\x27]/i) ||
+                           block.match(/<img\b[^>]*src=["\x27](https?:\/\/[^"\x27]+)["\x27]/i);
+        let thumbUrl = thumbMatch ? thumbMatch[1] : '';
+        if (thumbUrl) {
+            if (thumbUrl.startsWith('//')) {
+                thumbUrl = 'https:' + thumbUrl;
+            } else if (thumbUrl.startsWith('/')) {
+                thumbUrl = 'https://www.kamtape.com' + thumbUrl;
+            } else if (!thumbUrl.startsWith('http://') && !thumbUrl.startsWith('https://')) {
+                thumbUrl = 'https://www.kamtape.com/' + thumbUrl;
+            }
+        } else {
+            thumbUrl = `https://www.kamtape.com/get_still?video_id=${vId}`;
+        }
 
         const titleMatch = block.match(/<div\b[^>]*class=["\x27]vtitle["\x27][^>]*>[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/i);
         let vTitle = titleMatch ? decodeHtmlEntities(titleMatch[1].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()) : ('Video ' + vId);
@@ -178,7 +193,18 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
             const vId = m[1];
             if (seenVideos[vId]) continue;
             seenVideos[vId] = true;
-            const thumbUrl = m[2];
+            let thumbUrl = m[2];
+            if (thumbUrl) {
+                if (thumbUrl.startsWith('//')) {
+                    thumbUrl = 'https:' + thumbUrl;
+                } else if (thumbUrl.startsWith('/')) {
+                    thumbUrl = 'https://www.kamtape.com' + thumbUrl;
+                } else if (!thumbUrl.startsWith('http://') && !thumbUrl.startsWith('https://')) {
+                    thumbUrl = 'https://www.kamtape.com/' + thumbUrl;
+                }
+            } else {
+                thumbUrl = `https://www.kamtape.com/get_still?video_id=${vId}`;
+            }
             const vTitle = decodeHtmlEntities(m[3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()) || ('Video ' + vId);
 
             const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(thumbUrl)}`;
@@ -206,9 +232,12 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
             if (text.length > 2 && !text.toLowerCase().includes('sign up')) {
                 seenVideos[vId] = true;
                 count++;
+                const stillUrl = `https://www.kamtape.com/get_still?video_id=${vId}`;
+                const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(stillUrl)}`;
                 const mp4Url = `https://www.kamtape.com/get_video?video_id=${vId}&webm=1`;
                 const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${vId}`;
                 lines.push('H2:' + text);
+                lines.push('I:' + proxyThumb + '\t' + text);
                 lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + text);
                 lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
                 lines.push('L:https://www.kamtape.com/watch?v=' + vId + '\tWatch on KamTape');

@@ -16,6 +16,7 @@ const http = require('http');
 const url = require('url');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const kamtape = require('./kamtape');
 const frogfind = require('./frogfind');
@@ -885,7 +886,7 @@ async function handleImageProxy(res, targetUrl, maxWidth = 220) {
         }
 
         const cacheSuffix = (maxWidth !== 220) ? `_w${maxWidth}` : '';
-        const cacheKey = Buffer.from(cleanUrl + cacheSuffix).toString('hex').substring(0, 24);
+        const cacheKey = crypto.createHash('sha256').update(cleanUrl + cacheSuffix).digest('hex').substring(0, 32);
 
         // 1. Fast in-memory cache lookup (< 1ms latency)
         if (imageMemoryCache.has(cacheKey)) {
@@ -927,16 +928,87 @@ async function handleImageProxy(res, targetUrl, maxWidth = 220) {
         try { origin = new URL(cleanUrl).origin; } catch (e) {}
 
         console.log(`[Image Proxy] Fetching: ${cleanUrl}`);
-        const resp = await fetch(cleanUrl, {
-            headers: {
-                'User-Agent': USER_AGENT,
-                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                'Referer': origin || cleanUrl
-            }
-        });
+        let resp = null;
+        try {
+            resp = await fetch(cleanUrl, {
+                headers: {
+                    'User-Agent': USER_AGENT,
+                    'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                    'Referer': origin || cleanUrl
+                }
+            });
+        } catch (fetchErr) {
+            console.warn(`[Image Proxy] Initial fetch failed for ${cleanUrl}:`, fetchErr.message);
+        }
 
-        if (!resp.ok) {
-            throw new Error(`Upstream returned ${resp.status}`);
+        // YouTube fallback retry logic
+        if (!resp || !resp.ok) {
+            const ytMatch = cleanUrl.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
+            if (ytMatch && ytMatch[1]) {
+                const ytId = ytMatch[1];
+                const ytFallbacks = [
+                    `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`,
+                    `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+                    `https://i.ytimg.com/vi/${ytId}/default.jpg`
+                ];
+                for (const fbUrl of ytFallbacks) {
+                    if (fbUrl !== cleanUrl) {
+                        try {
+                            console.log(`[Image Proxy] YouTube fallback retry: ${fbUrl}`);
+                            const fbResp = await fetch(fbUrl, {
+                                headers: {
+                                    'User-Agent': USER_AGENT,
+                                    'Accept': 'image/jpeg,image/*;q=0.8',
+                                    'Referer': 'https://www.youtube.com/'
+                                }
+                            });
+                            if (fbResp.ok) {
+                                resp = fbResp;
+                                cleanUrl = fbUrl;
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }
+        }
+
+        // KamTape fallback retry logic
+        if (!resp || !resp.ok) {
+            if (cleanUrl.includes('kamtape.com') || cleanUrl.includes('get_still')) {
+                const ktMatch = cleanUrl.match(/\/vi\/([a-zA-Z0-9_-]+)\//) || cleanUrl.match(/[?&]video_id=([a-zA-Z0-9_-]+)/);
+                if (ktMatch && ktMatch[1]) {
+                    const ktId = ktMatch[1];
+                    const ktFallbacks = [
+                        `https://www.kamtape.com/get_still?video_id=${ktId}`,
+                        `https://v37.kamtape.com/vi/${ktId}/2.jpg`,
+                        `https://v37.kamtape.com/vi/${ktId}/0.jpg`
+                    ];
+                    for (const fbUrl of ktFallbacks) {
+                        if (fbUrl !== cleanUrl) {
+                            try {
+                                console.log(`[Image Proxy] KamTape fallback retry: ${fbUrl}`);
+                                const fbResp = await fetch(fbUrl, {
+                                    headers: {
+                                        'User-Agent': USER_AGENT,
+                                        'Accept': 'image/jpeg,image/png,image/*;q=0.8',
+                                        'Referer': 'https://www.kamtape.com/'
+                                    }
+                                });
+                                if (fbResp.ok) {
+                                    resp = fbResp;
+                                    cleanUrl = fbUrl;
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!resp || !resp.ok) {
+            throw new Error(`Upstream returned ${resp ? resp.status : 'fetch failed'}`);
         }
 
         const inputBuffer = Buffer.from(await resp.arrayBuffer());
@@ -1360,14 +1432,14 @@ const server = http.createServer(async (req, res) => {
         let cacheKey = null;
         if (youtube.isYouTubeUrl(videoUrl)) {
             const vId = youtube.extractVideoId(videoUrl);
-            cacheKey = 'yt_' + (vId || Buffer.from(videoUrl).toString('hex').substring(0, 16));
+            cacheKey = 'yt_' + (vId || crypto.createHash('sha256').update(videoUrl).digest('hex').substring(0, 16));
         } else {
             try {
                 const u = new URL(videoUrl);
                 cacheKey = u.searchParams.get('video_id') || u.searchParams.get('v');
             } catch (e) {}
             if (!cacheKey) {
-                cacheKey = Buffer.from(videoUrl).toString('hex').substring(0, 16);
+                cacheKey = crypto.createHash('sha256').update(videoUrl).digest('hex').substring(0, 16);
             }
         }
 

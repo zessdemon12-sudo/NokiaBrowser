@@ -1174,4 +1174,38 @@ Subscriptions feed"
      - `https://www.w3schools.com/html/html_images.asp`: Successfully extracts 4 images including Lynx mascot and SVG logo.
      - Direct `/image?url=...` tests verify 200 OK with `image/png` across SVG, WebP, JPEG, and PNG.
 
-
+### Event 034: 2026-09-06 — Fix YouTube & KamTape Thumbnail Image Loading, Cache Collision, and Failover (MIT License)
+1. **Root Cause Analysis & Diagnosis**:
+   - **Catastrophic Cache Collision in `server/server.js`**:
+     - `cacheKey` was computed as `Buffer.from(cleanUrl + cacheSuffix).toString('hex').substring(0, 24)`.
+     - Because 2 hex characters represent 1 ASCII byte, slicing 24 hex characters truncated the URL to the first **12 ASCII characters**!
+     - For all YouTube thumbnails (`https://i.ytimg.com/vi/...`), the first 12 characters were always `https://i.yt` (`68747470733a2f2f692e7974`).
+     - For KamTape thumbnails (`https://v37.kamtape.com/...` or `https://www.kamtape.com/...`), the first 12 characters were always `https://v37.` or `https://www.`.
+     - Consequently, every single video from YouTube or KamTape overwrote each other in both the in-memory LRU cache and the disk cache (`server/cache/images/`) with the exact same file!
+   - **KamTape Regex Icon False Positive**:
+     - In `server/kamtape.js`, regex matched `<img src="...">` inside the `vTable` block without verifying the video anchor or thumbnail class. This caused it to match the QuickList add icon (`/img/icn_add_20x20.gif`) or fail on relative/protocol-relative URLs.
+   - **YouTube Expiring Query Signatures**:
+     - yt-dlp extracted `thumbnails[0]` pointing to `hq720.jpg?sqp=...` with expiring query tokens that return 403 Forbidden or 404 when accessed later.
+2. **Implementation**:
+   - **SHA-256 Collision-Free Hashing (`server/server.js`)**:
+     - Switched `cacheKey` to `crypto.createHash('sha256').update(cleanUrl + cacheSuffix).digest('hex').substring(0, 32)`, providing 128-bit collision resistance.
+     - Updated audio cacheKey fallback to SHA-256 hash.
+   - **Dual-Stage Fallback Recovery in `handleImageProxy`**:
+     - If fetching upstream fails:
+       - YouTube: Extracts video ID and sequentially attempts `mqdefault.jpg` $\to$ `hqdefault.jpg` $\to$ `default.jpg`.
+       - KamTape: Extracts video ID and sequentially attempts `get_still?video_id=...` $\to$ `v37.kamtape.com/vi/.../2.jpg` $\to$ `.../0.jpg`.
+   - **Canonical YouTube Thumbnails (`server/youtube.js`)**:
+     - Standardized search, watch pages, subscriptions feed, and homepage on permanent, 320x180 16:9 canonical `mqdefault.jpg` thumbnails.
+   - **Accurate KamTape Scraping & Normalization (`server/kamtape.js`)**:
+     - Prioritizes thumbnails inside `<a href="/watch?v=...">` or with class `vimg` to eliminate QuickList icon pollution.
+     - Normalizes relative (`/get_still...`) and protocol-relative (`//v37...`) URLs to `https://www.kamtape.com`.
+     - Updated watch page to use HTTPS `https://www.kamtape.com/get_still?video_id=...`.
+     - Added fallback thumbnail proxies to third-attempt text links.
+3. **Verification**:
+   - Ran `verify_thumbnails.py`:
+     - YouTube Search: Verified distinct 220x124 PNG thumbnails for all results (13,870 B, 36,060 B, 41,610 B).
+     - YouTube Watch Page & Subscriptions Feed: Verified valid non-colliding PNG thumbnails.
+     - KamTape Search & Watch: Verified distinct PNG thumbnails (8,009 B, 21,210 B, 17,463 B) with zero icon pollution.
+     - Fallback Recovery: Verified broken YouTube and KamTape URLs automatically recover to valid thumbnails.
+     - Cache Directory: Verified 11 unique SHA-256 hashed `.png` files without collision.
+   - Binary budget check: `build/NokiaBrowser.jar` is **49,147 bytes** (strictly $\le$ 50,000 bytes).
