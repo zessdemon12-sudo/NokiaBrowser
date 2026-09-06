@@ -606,10 +606,12 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
                 console.log(`[3GP Streamer] Transcoding to 3GP (${resProfile}) for ${cacheKey}...`);
                 const ffmpegArgs = [
                     '-y',
+                    '-threads', '2',
                     '-i', tmpV,
                     '-i', tmpA,
                     '-c:v', vcodec,
-                    '-b:v', vbitrate
+                    '-b:v', vbitrate,
+                    '-g', '30'
                 ];
                 if (fps) {
                     ffmpegArgs.push('-r', fps);
@@ -676,9 +678,11 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
         // Spawn ffmpeg to transcode to authentic 3GP (240p QVGA MPEG-4+AAC or 144p H.263+AMR)
         const ffmpegArgs = [
             '-y',
+            '-threads', '2',
             '-i', 'pipe:0',
             '-c:v', vcodec,
-            '-b:v', vbitrate
+            '-b:v', vbitrate,
+            '-g', '30'
         ];
         if (fps) {
             ffmpegArgs.push('-r', fps);
@@ -1201,7 +1205,8 @@ const server = http.createServer(async (req, res) => {
             '-y',
             '-threads', '2',
             '-fflags', 'nobuffer+fastseek',
-            '-flags', 'low_delay'
+            '-flags', 'low_delay',
+            '-tune', 'zerolatency'
         ];
         const sSec = parseFloat(startSec) || 0;
         if (sSec > 0) {
@@ -1511,7 +1516,7 @@ const server = http.createServer(async (req, res) => {
 
         // Transcode audio on the fly with FFmpeg
         const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
-        const ffmpegArgs = ['-y'];
+        const ffmpegArgs = ['-y', '-threads', '2'];
         if (sSec > 0) {
             ffmpegArgs.push('-ss', startSec);
         }
@@ -1524,6 +1529,7 @@ const server = http.createServer(async (req, res) => {
                 '-b:a', '48k',
                 '-ar', '22050',
                 '-ac', '1',
+                '-reservoir', '0',
                 '-f', 'mp3',
                 'pipe:1'
             );

@@ -449,11 +449,11 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                 }
                 if (aMs >= 0) {
                     long d = (long) curMs - aMs;
-                    if (d > 350) {
+                    if (d > 250) {
                         try {
-                            Thread.sleep(Math.min(d - 250, 60L));
+                            Thread.sleep(Math.min(d - 150, 40L));
                         } catch (Exception e) {}
-                    } else if (d < -250) {
+                    } else if (d < -200) {
                         skipRender = true;
                     }
                 }
