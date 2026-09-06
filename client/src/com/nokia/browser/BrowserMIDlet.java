@@ -349,31 +349,32 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         simForm = new Form("SIM & Mobile Network");
 
         choiceSimSlot = new ChoiceGroup("Active SIM Slot:", ChoiceGroup.EXCLUSIVE);
-        choiceSimSlot.append("SIM 1 (Primary)", null);
-        choiceSimSlot.append("SIM 2 (Secondary)", null);
+        choiceSimSlot.append("SIM 1", null);
+        choiceSimSlot.append("SIM 2", null);
         choiceSimSlot.setSelectedIndex(storage.getSimSlot(), true);
         simForm.append(choiceSimSlot);
 
         choiceBearer = new ChoiceGroup("Network Bearer:", ChoiceGroup.EXCLUSIVE);
-        choiceBearer.append("Auto (Device Default)", null);
+        choiceBearer.append("Auto", null);
         choiceBearer.append("2G (GPRS)", null);
         choiceBearer.append("2.5G (EDGE)", null);
         choiceBearer.append("3G (WCDMA)", null);
         choiceBearer.append("3.5G (HSDPA)", null);
-        choiceBearer.append("WiFi / WLAN", null);
+        choiceBearer.append("WiFi", null);
         choiceBearer.setSelectedIndex(storage.getNetworkBearer(), true);
         simForm.append(choiceBearer);
 
         choiceApn = new ChoiceGroup("Carrier APN Profile:", ChoiceGroup.EXCLUSIVE);
-        choiceApn.append("Auto (Default Internet)", null);
-        choiceApn.append("Robi-INTERNET (BD)", null);
-        choiceApn.append("Vodafone (live.vodafone.com)", null);
-        choiceApn.append("T-Mobile (fast.t-mobile.com)", null);
-        choiceApn.append("AT&T (phone)", null);
-        choiceApn.append("Airtel (airtelgprs.com)", null);
-        choiceApn.append("Jio 4G/5G (jionet)", null);
-        choiceApn.append("Orange (orange)", null);
-        choiceApn.append("Custom APN...", null);
+        choiceApn.append("Auto", null);
+        choiceApn.append("ROBI-WAP 2.0", null);
+        choiceApn.append("Robi-INTERNET", null);
+        choiceApn.append("Vodafone", null);
+        choiceApn.append("T-Mobile (fast)", null);
+        choiceApn.append("AT&T", null);
+        choiceApn.append("Airtel (gprs)", null);
+        choiceApn.append("Jio (jionet)", null);
+        choiceApn.append("Orange", null);
+        choiceApn.append("Custom...", null);
         choiceApn.setSelectedIndex(storage.getApnPreset(), true);
         simForm.append(choiceApn);
 
@@ -517,9 +518,10 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         return;
                     }
 
-                    // 4. Robi routing (Robi-INTERNET)
-                    if (norm.startsWith("robi") || norm.indexOf("robi.com.bd") >= 0) {
-                        storage.setApnPreset(com.nokia.browser.net.SimManager.APN_ROBI);
+                    // 4. Robi routing (ROBI-WAP 2.0 & Robi-INTERNET)
+                    if (norm.startsWith("robi") || norm.indexOf("robi.com.bd") >= 0 || norm.startsWith("wap")) {
+                        int preset = (norm.indexOf("internet") >= 0) ? com.nokia.browser.net.SimManager.APN_ROBI_INTERNET : com.nokia.browser.net.SimManager.APN_ROBI_WAP;
+                        storage.setApnPreset(preset);
                         loadUrl("http://wap.robi.com.bd", true);
                         return;
                     }

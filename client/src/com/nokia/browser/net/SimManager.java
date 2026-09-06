@@ -21,15 +21,16 @@ public class SimManager {
     public static final int BEARER_WIFI  = 5;
 
     // Carrier APN Presets
-    public static final int APN_AUTO     = 0;
-    public static final int APN_ROBI     = 1;
-    public static final int APN_VODAFONE = 2;
-    public static final int APN_TMOBILE  = 3;
-    public static final int APN_ATT      = 4;
-    public static final int APN_AIRTEL   = 5;
-    public static final int APN_JIO      = 6;
-    public static final int APN_ORANGE   = 7;
-    public static final int APN_CUSTOM   = 8;
+    public static final int APN_AUTO          = 0;
+    public static final int APN_ROBI_WAP      = 1;
+    public static final int APN_ROBI_INTERNET = 2;
+    public static final int APN_VODAFONE      = 3;
+    public static final int APN_TMOBILE       = 4;
+    public static final int APN_ATT           = 5;
+    public static final int APN_AIRTEL        = 6;
+    public static final int APN_JIO           = 7;
+    public static final int APN_ORANGE        = 8;
+    public static final int APN_CUSTOM        = 9;
 
     private StorageManager storage;
 
@@ -137,17 +138,17 @@ public class SimManager {
     public String getApnName() {
         int preset = storage.getApnPreset();
         switch (preset) {
-            case APN_ROBI:     return "INTERNET";
-            case APN_VODAFONE: return "live.vodafone.com";
-            case APN_TMOBILE:  return "fast.t-mobile.com";
-            case APN_ATT:      return "phone";
-            case APN_AIRTEL:   return "airtelgprs.com";
-            case APN_JIO:      return "jionet";
-            case APN_ORANGE:   return "orange";
+            case APN_ROBI_WAP:      return "WAP";
+            case APN_ROBI_INTERNET: return "INTERNET";
+            case APN_VODAFONE:      return "live.vodafone.com";
+            case APN_TMOBILE:       return "fast.t-mobile.com";
+            case APN_ATT:           return "phone";
+            case APN_AIRTEL:        return "airtelgprs.com";
+            case APN_JIO:           return "jionet";
+            case APN_ORANGE:        return "orange";
             case APN_CUSTOM:
                 String c = storage.getCustomApn();
                 return (c != null && c.length() > 0) ? c : "internet";
-            case APN_AUTO:
             default:
                 return "internet";
         }
@@ -156,13 +157,11 @@ public class SimManager {
     public String getApnProxy() {
         int preset = storage.getApnPreset();
         switch (preset) {
-            case APN_ROBI:     return "10.16.18.77:8080";
+            case APN_ROBI_WAP: return "10.16.18.77:9028";
             case APN_VODAFONE: return "10.10.1.100:8080";
             case APN_ORANGE:   return "192.168.10.100:8080";
-            case APN_CUSTOM:
-                return storage.getCustomProxy();
-            default:
-                return "";
+            case APN_CUSTOM:   return storage.getCustomProxy();
+            default:           return "";
         }
     }
 

@@ -101,7 +101,7 @@ public class StorageManager {
     // SIM and Cellular Network settings
     private int simSlot = 0;         // 0 = SIM 1, 1 = SIM 2
     private int networkBearer = 0;   // 0 = Auto, 1 = GPRS, 2 = EDGE, 3 = 3G, 4 = HSDPA, 5 = WiFi
-    private int apnPreset = 0;       // 0 = Auto, 1 = Vodafone, 2 = T-Mobile, 3 = AT&T, 4 = Airtel, 5 = Jio, 6 = Orange, 7 = Custom
+    private int apnPreset = 1;       // 1 = ROBI-WAP 2.0, 2 = Robi-INTERNET, etc.
     private String customApn = "";
     private String customProxy = "";
     private boolean dataSaver = false;
