@@ -202,7 +202,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         try {
             if (audioUrl.startsWith("http://") || audioUrl.startsWith("https://")) {
                 try {
-                    audioConn = (HttpConnection) Connector.open(audioUrl, Connector.READ, true);
+                    audioConn = (HttpConnection) Connector.open(audioUrl, Connector.READ, false);
                     audioConn.setRequestMethod(HttpConnection.GET);
                     if (simManager != null) {
                         audioConn.setRequestProperty("User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");
@@ -273,7 +273,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                         replaceString(audioUrl, "format=mp3", "format=wav");
                     String fallbackType = wasWav ? "audio/mpeg" : "audio/x-wav";
 
-                    audioConn = (HttpConnection) Connector.open(fallbackUrl, Connector.READ, true);
+                    audioConn = (HttpConnection) Connector.open(fallbackUrl, Connector.READ, false);
                     audioConn.setRequestMethod(HttpConnection.GET);
                     audioConn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
                     audioIs = audioConn.openInputStream();
@@ -358,7 +358,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
             statusMessage = "Buffering video...";
             repaint();
 
-            streamConn = (HttpConnection) Connector.open(streamUrl, Connector.READ, true);
+            streamConn = (HttpConnection) Connector.open(streamUrl, Connector.READ, false);
             streamConn.setRequestMethod(HttpConnection.GET);
             if (simManager != null) {
                 streamConn.setRequestProperty("User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");

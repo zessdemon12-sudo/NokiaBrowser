@@ -54,6 +54,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     private TextField txtCustomApn;
     private TextField txtCustomProxy;
     private ChoiceGroup choiceDataSaver;
+    private Command cmdSettings;
 
     public static BrowserMIDlet instance;
     private boolean isStarted = false;
@@ -69,6 +70,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         cmdDelete = new Command("Delete", Command.ITEM, 3);
         cmdSimInfo = new Command("SIM Info", Command.SCREEN, 2);
         cmdResetData = new Command("Reset Counter", Command.SCREEN, 3);
+        cmdSettings = new Command("Settings", Command.SCREEN, 1);
     }
 
     public void startApp() {
@@ -168,7 +170,14 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
             public void run() {
                 canvas.setLoading(false, "");
                 Alert alert = new Alert("Browsing Error", error, null, AlertType.ERROR);
-                alert.setTimeout(3000);
+                if (error != null && (error.indexOf("Settings") >= 0 || error.indexOf("Gateway") >= 0 || error.indexOf("Loopback") >= 0)) {
+                    alert.setTimeout(Alert.FOREVER);
+                    alert.addCommand(cmdSettings);
+                    alert.addCommand(cmdOk);
+                    alert.setCommandListener(BrowserMIDlet.this);
+                } else {
+                    alert.setTimeout(3000);
+                }
                 display.setCurrent(alert, canvas);
             }
         });
@@ -290,8 +299,9 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     public void showSettings() {
         settingsForm = new Form("Settings");
 
-        txtGatewayUrl = new TextField("Gateway URL:", storage.getGatewayUrl(), 120, TextField.URL);
+        txtGatewayUrl = new TextField("Gateway URL:", storage.getGatewayUrl(), 160, TextField.URL);
         settingsForm.append(txtGatewayUrl);
+        settingsForm.append(new StringItem(null, "Real phone: use PC IP or tunnel URL (not 127.0.0.1)."));
 
         choiceImages = new ChoiceGroup("Images:", ChoiceGroup.EXCLUSIVE);
         choiceImages.append("Load Images", null);
@@ -329,15 +339,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
 
     public void showAbout() {
         Alert about = new Alert("About Nokia Browser",
-                "Modern Nokia J2ME Browser\n" +
-                "Resolution: 240x320 QVGA\n" +
-                "Profile: MIDP 2.0 / CLDC 1.1\n" +
-                "SIM & Network APN Stack\n" +
-                "HTTPS TLS 1.3 / 1.2 Support\n" +
-                "Audio/Video Media Support\n" +
-                "YouTube & KamTape Support\n" +
-                "FrogFind & Bing Search\n" +
-                "Designed for Nokia S40/S60",
+                "Nokia J2ME Browser\n240x320 QVGA (S40/S60)\nHTTPS & Media Support",
                 null, AlertType.INFO);
         about.setTimeout(Alert.FOREVER);
         display.setCurrent(about, canvas);
@@ -423,6 +425,14 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     }
 
     public void commandAction(Command c, Displayable d) {
+        if (c == cmdSettings) {
+            showSettings();
+            return;
+        }
+        if (d instanceof Alert && c == cmdOk) {
+            display.setCurrent(canvas);
+            return;
+        }
         if (d == addressBox) {
             if (c == cmdOk) {
                 String target = addressBox.getString();

@@ -231,34 +231,27 @@ public class StorageManager {
         } catch (Exception e) {}
         try {
             rs = RecordStore.openRecordStore(RS_SETTINGS, true);
-            byte[] b1 = gatewayUrl.getBytes();
-            byte[] b2 = (loadImages ? "1" : "0").getBytes();
-            byte[] b3 = String.valueOf(fontSize).getBytes();
-            byte[] b4 = String.valueOf(searchEngine).getBytes();
-            byte[] b5 = String.valueOf(orientation).getBytes();
-            byte[] b6 = String.valueOf(simSlot).getBytes();
-            byte[] b7 = String.valueOf(networkBearer).getBytes();
-            byte[] b8 = String.valueOf(apnPreset).getBytes();
-            byte[] b9 = (customApn != null ? customApn : "").getBytes();
-            byte[] b10 = (customProxy != null ? customProxy : "").getBytes();
-            byte[] b11 = (dataSaver ? "1" : "0").getBytes();
-            byte[] b12 = String.valueOf(totalMobileBytes).getBytes();
-            rs.addRecord(b1, 0, b1.length);
-            rs.addRecord(b2, 0, b2.length);
-            rs.addRecord(b3, 0, b3.length);
-            rs.addRecord(b4, 0, b4.length);
-            rs.addRecord(b5, 0, b5.length);
-            rs.addRecord(b6, 0, b6.length);
-            rs.addRecord(b7, 0, b7.length);
-            rs.addRecord(b8, 0, b8.length);
-            rs.addRecord(b9, 0, b9.length);
-            rs.addRecord(b10, 0, b10.length);
-            rs.addRecord(b11, 0, b11.length);
-            rs.addRecord(b12, 0, b12.length);
+            addRec(rs, gatewayUrl);
+            addRec(rs, loadImages ? "1" : "0");
+            addRec(rs, String.valueOf(fontSize));
+            addRec(rs, String.valueOf(searchEngine));
+            addRec(rs, String.valueOf(orientation));
+            addRec(rs, String.valueOf(simSlot));
+            addRec(rs, String.valueOf(networkBearer));
+            addRec(rs, String.valueOf(apnPreset));
+            addRec(rs, customApn);
+            addRec(rs, customProxy);
+            addRec(rs, dataSaver ? "1" : "0");
+            addRec(rs, String.valueOf(totalMobileBytes));
         } catch (Exception e) {
         } finally {
             closeRs(rs);
         }
+    }
+
+    private void addRec(RecordStore rs, String s) throws Exception {
+        byte[] b = (s != null ? s : "").getBytes();
+        rs.addRecord(b, 0, b.length);
     }
 
     private void addBookmarkMemory(String title, String url) {
@@ -369,9 +362,7 @@ public class StorageManager {
             }
             re.destroy();
             for (int i = 0; i < bookmarkTitles.size(); i++) {
-                String line = bookmarkTitles.elementAt(i) + "\t" + bookmarkUrls.elementAt(i);
-                byte[] b = line.getBytes();
-                rs.addRecord(b, 0, b.length);
+                addRec(rs, bookmarkTitles.elementAt(i) + "\t" + bookmarkUrls.elementAt(i));
             }
         } catch (Exception e) {
         } finally {
@@ -409,8 +400,7 @@ public class StorageManager {
             }
             re.destroy();
             for (int i = 0; i < historyList.size(); i++) {
-                byte[] b = ((String) historyList.elementAt(i)).getBytes();
-                rs.addRecord(b, 0, b.length);
+                addRec(rs, (String) historyList.elementAt(i));
             }
         } catch (Exception e) {
         } finally {

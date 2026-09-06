@@ -1209,3 +1209,19 @@ Subscriptions feed"
      - Fallback Recovery: Verified broken YouTube and KamTape URLs automatically recover to valid thumbnails.
      - Cache Directory: Verified 11 unique SHA-256 hashed `.png` files without collision.
    - Binary budget check: `build/NokiaBrowser.jar` is **49,147 bytes** (strictly $\le$ 50,000 bytes).
+
+### Event 020: Hardware Cellular Diagnosis & Fix ('53-Error in HTTP operation' on Nokia X2-00)
+- **Timestamp**: 2026-09-06T19:02:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Fix `Cellular error (E): 53-Error in HTTP operation` on physical Nokia Series 40 phone (Nokia X2-00) over 2G EDGE cellular network (`51 E`), provide clear gateway diagnostics, and supply zero-config plain HTTP cellular tunnel.
+- **Root Cause Analysis**:
+  1. **Cellular Loopback Address (`127.0.0.1:8080`)**: Client default gateway was `http://127.0.0.1:8080`. On real phone over cellular network, `127.0.0.1` refers to phone itself, failing immediately. Nokia X2-00 has no Wi-Fi hardware (only 2G GSM/GPRS/EDGE), requiring a public IP/tunnel to connect to PC gateway.
+  2. **Native Timeout Flag in `Connector.open`**: `Connector.open(..., Connector.READ, true)` requested timeout handling. On Nokia S40 native HTTP stack, high-latency cellular connections trigger internal timeout aborts (`53-Error in HTTP operation`).
+  3. **Header Sanitization**: Non-ASCII characters (e.g. Bengali operator strings on Bangladeshi SIMs) in `setRequestProperty` caused Nokia's native HTTP parser to abort.
+- **Implementation**:
+  1. **Client Network Engine (`NetworkManager.java`)**: Replaced `Connector.open(url, Connector.READ, true)` with `Connector.open(url, Connector.READ, false)` across `executeFetch` and `fetchImage`. Added `setSafeHeader` to strip all non-printable ASCII `[32..126]`. Enhanced error diagnostics to explicitly identify `Loopback (127.0.0.1)` and `Gateway unreachable` with direct Settings guidance.
+  2. **Client Media Player (`MediaPlayerCanvas.java`)**: Updated `audioConn` and `streamConn` to `Connector.READ, false`.
+  3. **Client UI & Error Flow (`BrowserMIDlet.java`)**: Added `cmdSettings` on error alerts (`Alert.FOREVER`), allowing immediate one-click Settings access from connection errors.
+  4. **Bytecode Size Optimization (`StorageManager.java`, `BrowserMIDlet.java`)**: Implemented `addRec` helper in RMS operations, reducing bytecode size. Final JAR size: **49,910 bytes** (strictly $\le 50,000$ bytes).
+  5. **Cellular Tunnel Tooling (`server/tunnel.js`, `scripts/start-cellular-tunnel.sh`)**: Built zero-config plain HTTP TCP tunnel using `tools/bore` over `bore.pub` without SSL/TLS requirements.
+- **Verification**: Recompiled cleanly with `./build.sh` (49,910 bytes). Verified live tunnel: `http://bore.pub:62090/health` returning 200 OK.

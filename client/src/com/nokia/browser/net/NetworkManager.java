@@ -75,18 +75,28 @@ public class NetworkManager {
         executeFetch(requestUrl, targetUrl, callback);
     }
 
-    private void applyCellularHeaders(HttpConnection conn) {
+    private void setSafeHeader(HttpConnection conn, String key, String val) {
+        if (conn == null || val == null || val.length() == 0) return;
         try {
-            conn.setRequestProperty("User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");
-            conn.setRequestProperty("X-Nokia-SIM", String.valueOf(simManager.getActiveSim() + 1));
-            conn.setRequestProperty("X-Nokia-Bearer", simManager.getBearerBadge());
-            conn.setRequestProperty("X-Nokia-Operator", simManager.getDetectedOperator());
-            conn.setRequestProperty("X-Nokia-APN", simManager.getApnName());
-            conn.setRequestProperty("X-Nokia-Signal", String.valueOf(simManager.getSignalBars()));
-            if (simManager.isDataSaver()) {
-                conn.setRequestProperty("X-Nokia-Data-Saver", "1");
+            StringBuffer sb = new StringBuffer();
+            for (int i = 0; i < val.length(); i++) {
+                char c = val.charAt(i);
+                if (c >= 32 && c <= 126) sb.append(c);
             }
-        } catch (Exception e) {}
+            if (sb.length() > 0) conn.setRequestProperty(key, sb.toString());
+        } catch (Throwable t) {}
+    }
+
+    private void applyCellularHeaders(HttpConnection conn) {
+        setSafeHeader(conn, "User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");
+        setSafeHeader(conn, "X-Nokia-SIM", String.valueOf(simManager.getActiveSim() + 1));
+        setSafeHeader(conn, "X-Nokia-Bearer", simManager.getBearerBadge());
+        setSafeHeader(conn, "X-Nokia-Operator", simManager.getDetectedOperator());
+        setSafeHeader(conn, "X-Nokia-APN", simManager.getApnName());
+        setSafeHeader(conn, "X-Nokia-Signal", String.valueOf(simManager.getSignalBars()));
+        if (simManager.isDataSaver()) {
+            setSafeHeader(conn, "X-Nokia-Data-Saver", "1");
+        }
     }
 
     private void executeFetch(String requestUrl, String originalUrl, NetworkCallback callback) {
@@ -104,7 +114,7 @@ public class NetworkManager {
                     try { Thread.sleep(400); } catch (Exception ex) {}
                 }
 
-                conn = (HttpConnection) Connector.open(requestUrl, Connector.READ, true);
+                conn = (HttpConnection) Connector.open(requestUrl, Connector.READ, false);
                 conn.setRequestMethod(HttpConnection.GET);
                 applyCellularHeaders(conn);
 
@@ -171,10 +181,14 @@ public class NetworkManager {
         if (!success && lastException != null) {
             String msg = lastException.getMessage();
             if (msg == null || msg.length() == 0) msg = lastException.getClass().getName();
-            if (msg.indexOf("refused") >= 0 || msg.indexOf("Connect") >= 0) {
-                callback.onError("Gateway offline: " + storage.getGatewayUrl() + "\nRun: node server/server.js");
+            String gw = storage.getGatewayUrl();
+            if (gw != null && (gw.indexOf("127.0.0.1") >= 0 || gw.indexOf("localhost") >= 0)) {
+                callback.onError("Loopback (127.0.0.1):\nSet PC IP/Tunnel in Settings");
+            } else if (msg.indexOf("53") >= 0 || msg.indexOf("HTTP operation") >= 0 ||
+                       msg.indexOf("refused") >= 0 || msg.indexOf("Connect") >= 0) {
+                callback.onError("Gateway unreachable:\n" + gw + "\nCheck server/tunnel in Settings");
             } else {
-                callback.onError("Cellular error (" + simManager.getBearerBadge() + "): " + msg);
+                callback.onError("Cellular error (" + simManager.getBearerBadge() + "):\n" + msg);
             }
         }
     }
@@ -238,7 +252,7 @@ public class NetworkManager {
         InputStream is = null;
         ByteArrayOutputStream baos = null;
         try {
-            conn = (HttpConnection) Connector.open(imageUrl, Connector.READ, true);
+            conn = (HttpConnection) Connector.open(imageUrl, Connector.READ, false);
             conn.setRequestMethod(HttpConnection.GET);
             applyCellularHeaders(conn);
             int responseCode = conn.getResponseCode();

@@ -13,6 +13,7 @@ server/cache/images/*
 *.log
 test_nokia.3gp
 tools/*.bak
+tools/bore
 .DS_Store
 
 # Python bytecode
