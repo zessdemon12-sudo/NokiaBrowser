@@ -1222,6 +1222,39 @@ Subscriptions feed"
   1. **Client Network Engine (`NetworkManager.java`)**: Replaced `Connector.open(url, Connector.READ, true)` with `Connector.open(url, Connector.READ, false)` across `executeFetch` and `fetchImage`. Added `setSafeHeader` to strip all non-printable ASCII `[32..126]`. Enhanced error diagnostics to explicitly identify `Loopback (127.0.0.1)` and `Gateway unreachable` with direct Settings guidance.
   2. **Client Media Player (`MediaPlayerCanvas.java`)**: Updated `audioConn` and `streamConn` to `Connector.READ, false`.
   3. **Client UI & Error Flow (`BrowserMIDlet.java`)**: Added `cmdSettings` on error alerts (`Alert.FOREVER`), allowing immediate one-click Settings access from connection errors.
-  4. **Bytecode Size Optimization (`StorageManager.java`, `BrowserMIDlet.java`)**: Implemented `addRec` helper in RMS operations, reducing bytecode size. Final JAR size: **49,910 bytes** (strictly $\le 50,000$ bytes).
+  4. **Bytecode Size Optimization (`StorageManager.java`, `BrowserMIDlet.java`)**: Implemented `addRec` helper in RMS operations, reducing bytecode size. Final JAR size: **49,910 bytes** (strictly $\le$ 50,000 bytes).
   5. **Cellular Tunnel Tooling (`server/tunnel.js`, `scripts/start-cellular-tunnel.sh`)**: Built zero-config plain HTTP TCP tunnel using `tools/bore` over `bore.pub` without SSL/TLS requirements.
 - **Verification**: Recompiled cleanly with `./build.sh` (49,910 bytes). Verified live tunnel: `http://bore.pub:62090/health` returning 200 OK.
+
+---
+
+### Event 021: First-Class ROBI-WAP 2.0 Cellular Profile & Auto-Restarting Port 80 HTTP Tunnel
+- **Timestamp**: 2026-09-06T20:30:00+06:00
+- **Architect / Developer**: Antigravity AI Pair Programmer
+- **Goal**: Provide out-of-the-box support for the user's Nokia X2-00 connecting over Robi Axiata cellular network in Bangladesh via the official `ROBI-WAP 2.0` carrier profile, without requiring manual proxy or gateway IP typing on the handset.
+- **Root Cause & Carrier Constraints Analysis**:
+  1. **Cellular WAP Proxy Filter (`10.16.18.77:9028`)**: On Robi's WAP gateway APN (`WAP`), outbound traffic is strictly restricted to standard web ports (Port 80 HTTP and Port 443 HTTPS). High-port tunnels (such as `bore.pub:28080` or `bore.pub:62090`) are blocked by the carrier's gateway firewall, resulting in `53-Error in HTTP operation` on the phone.
+  2. **Standard Port 80 Reachability**: Why Opera Mini 4.5 works seamlessly on `ROBI-WAP 2.0` is because Opera Mini's transcoders route exclusively through standard Port 80. A public gateway accessible over standard Port 80 HTTP (`http://...:80/`) passes cleanly through Robi's WAP proxy.
+  3. **Localtunnel Resiliency**: Programmatic localtunnel Node client instances can retain dead sockets after network drops. Spawning `npx localtunnel --port 8080 --subdomain robi-nokia-wap` as a managed process with auto-restart guarantees persistent uptime on `http://robi-nokia-wap.loca.lt` (port 80).
+  4. **Tunnel Reminder Header**: Modern tunnel services serve a browser interstitial warning page unless `Bypass-Tunnel-Reminder: 1` header is included in requests.
+- **Implementation**:
+  1. **Carrier Presets & Default APN (`SimManager.java`)**:
+     - Configured preset `APN_ROBI_WAP = 1`: `APN: WAP`, `WAP Gateway: 10.16.18.77:9028`, Port 80 forwarding.
+     - Configured preset `APN_ROBI_INTERNET = 2`: `APN: INTERNET`, Direct packet data.
+  2. **Storage Manager Defaults (`StorageManager.java`)**:
+     - Pre-configured `DEFAULT_GATEWAY = "http://robi-nokia-wap.loca.lt"`.
+     - Set default `apnPreset = 1` (`ROBI-WAP 2.0`).
+  3. **Client Network Engine (`NetworkManager.java`)**:
+     - Injected `Bypass-Tunnel-Reminder: 1` into all HTTP requests to bypass tunnel interstitials.
+  4. **Client UI & Shortcuts (`BrowserMIDlet.java`)**:
+     - Added `ROBI-WAP 2.0` and `Robi-INTERNET` directly to the `SIM & Network Settings` screen.
+     - Added Omnibox keywords: typing `robi`, `wap`, or `robi-wap` immediately switches profile to Robi WAP and opens `http://wap.robi.com.bd`.
+     - Compacted UI label strings to preserve the strict $\le 50,000$ bytes binary budget.
+  5. **Auto-Restarting Port 80 Tunnel (`server/tunnel.js`)**:
+     - Upgraded `server/tunnel.js` with a resilient child-process manager executing `npx localtunnel --port 8080 --subdomain robi-nokia-wap` that monitors exit events and automatically reconnects with backoff.
+  6. **Robi WAP Portal Guide (`server/server.js`)**:
+     - Added built-in WAP portal at `http://wap.robi.com.bd` with complete profile configuration details.
+- **Verification**:
+  - Recompiled cleanly via `./build.sh`: JAR size is **49,997 bytes** (strictly $\le$ 50,000 bytes, 3 bytes headroom).
+  - Verified live tunnel: `curl -i -H "Bypass-Tunnel-Reminder: 1" "http://robi-nokia-wap.loca.lt/health"` returns `200 OK`.
+  - Verified page fetch: `curl -s -H "Bypass-Tunnel-Reminder: 1" "http://robi-nokia-wap.loca.lt/page?url=http%3A%2F%2Fwap.robi.com.bd"` returns `200 OK` with full Robi portal line protocol.
