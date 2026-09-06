@@ -1444,8 +1444,10 @@ const server = http.createServer(async (req, res) => {
                 targetUrl = 'https://www.kamtape.com' + targetUrl.substring(7);
             } else if (targetUrl === 'kamtape.com' || targetUrl.startsWith('kamtape.com/')) {
                 targetUrl = 'https://www.' + targetUrl;
-            } else if (targetUrl === 'www.kamtape.com' || targetUrl.startsWith('www.kamtape.com/')) {
-                targetUrl = 'https://' + targetUrl;
+            } else if (targetUrl === 'subs' || targetUrl === 'subscriptions' || targetUrl === 'feed' || targetUrl === 'feed/subscriptions') {
+                targetUrl = 'https://www.youtube.com/feed/subscriptions';
+            } else if (targetUrl === 'channels' || targetUrl === 'feed/channels') {
+                targetUrl = 'https://www.youtube.com/feed/channels';
             } else if (targetUrl === 'youtube' || targetUrl.startsWith('youtube/')) {
                 targetUrl = 'https://www.youtube.com' + targetUrl.substring(7);
             } else if (targetUrl === 'youtube.com' || targetUrl.startsWith('youtube.com/')) {
@@ -1582,6 +1584,13 @@ const server = http.createServer(async (req, res) => {
     // Search (Bing, FrogFind, or KamTape)
     if (pathname === '/search') {
         const q = parsedUrl.searchParams.get('q') || '';
+        const lq = q.trim().toLowerCase();
+        if (lq === 'subs' || lq === 'subscriptions' || lq === 'yt subs' || lq === 'youtube subs' || lq === 'feed') {
+            return youtube.handleYouTubeRequest('https://www.youtube.com/feed/subscriptions', res, gatewayHost, decodeHtmlEntities);
+        }
+        if (lq === 'channels' || lq === 'feed/channels') {
+            return youtube.handleYouTubeRequest('https://www.youtube.com/feed/channels', res, gatewayHost, decodeHtmlEntities);
+        }
         const engine = parsedUrl.searchParams.get('engine') || 'bing';
         if (engine === 'frogfind') {
             const frogUrl = q ? ('https://www.frogfind.com/?q=' + encodeURIComponent(q)) : 'https://www.frogfind.com';

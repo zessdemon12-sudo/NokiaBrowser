@@ -440,6 +440,17 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                     if (norm.startsWith("www.")) norm = norm.substring(4);
                     else if (norm.startsWith("m.")) norm = norm.substring(2);
 
+                    // Subscriptions & Channels routing
+                    if (norm.equals("subs") || norm.equals("subscriptions") || norm.equals("feed") ||
+                        norm.equals("feed/subscriptions") || norm.equals("youtube.com/feed/subscriptions")) {
+                        loadUrl("https://www.youtube.com/feed/subscriptions", true);
+                        return;
+                    }
+                    if (norm.equals("channels") || norm.equals("feed/channels") || norm.equals("youtube.com/feed/channels")) {
+                        loadUrl("https://www.youtube.com/feed/channels", true);
+                        return;
+                    }
+
                     // 1. YouTube routing
                     if (norm.equals("youtube") || norm.equals("youtube.com") || norm.equals("youtube.com/") ||
                         norm.equals("youtube.com/search") || norm.equals("youtube.com/results") || norm.equals("yt")) {

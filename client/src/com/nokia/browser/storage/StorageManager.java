@@ -277,6 +277,7 @@ public class StorageManager {
                 // Populate default bookmarks in memory
                 addBookmarkMemory("Robi Portal (Robi-INTERNET)", "http://wap.robi.com.bd");
                 addBookmarkMemory("YouTube Video Search", "search:youtube");
+                addBookmarkMemory("YouTube Subscriptions", "https://www.youtube.com/feed/subscriptions");
                 addBookmarkMemory("Search https://www.youtube.com/", "https://www.youtube.com/search");
                 addBookmarkMemory("YouTube Videos", "https://www.youtube.com");
                 addBookmarkMemory("KamTape Video Search", "search:kamtape");
@@ -330,6 +331,10 @@ public class StorageManager {
                 }
                 if (!bookmarkUrls.contains("https://www.youtube.com/search")) {
                     addBookmarkMemory("Search https://www.youtube.com/", "https://www.youtube.com/search");
+                    needsSave = true;
+                }
+                if (!bookmarkUrls.contains("https://www.youtube.com/feed/subscriptions")) {
+                    addBookmarkMemory("YouTube Subscriptions", "https://www.youtube.com/feed/subscriptions");
                     needsSave = true;
                 }
                 if (!bookmarkUrls.contains("https://www.youtube.com")) {

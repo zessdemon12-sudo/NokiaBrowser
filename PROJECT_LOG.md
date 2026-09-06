@@ -996,3 +996,62 @@ During investigation of the `/video_stream` endpoint and `MediaPlayerCanvas.java
 4. **Binary Budget & Verification**:
    - Built with Eclipse ECJ via `./build.sh`: JAR size is **48,414 bytes** (well under the <= 50,000 bytes budget).
    - Executed `VerifyAudioStreaming`: verified live streaming for both MP3 (`audio/mpeg`, 1509 ms playback) and WAV (`audio/x-wav`, 1502 ms playback) with real-time `SourceDataLine` audio streaming.
+
+---
+
+## Event 030 — YouTube Demo Account, Subscriptions Feed & Subscribe/Unsubscribe Routes (2026-09-06)
+
+**User request:**
+"add
+Demo account DEMO_CHANNELS (Nokia, LGR, Techmoan, etc.)
+Subscribe routes /subscribe, /unsubscribe, watch-page subscribe button
+Subscriptions feed"
+
+### Architectural Changes & Implementation
+1. **Server-Side Authentication & Demo Account (`server/youtube.js`)**:
+   - Defined `DEMO_CHANNELS` constant containing curated retro and tech channels:
+     - Nokia (`@nokia`)
+     - Action Retro (`@ActionRetro`)
+     - LGR (`@lazygamer`)
+     - Techmoan (`@Techmoan`)
+     - The 8-Bit Guy (`@The8BitGuy`)
+   - Implemented `getAuthState()`, `saveAuthState(state)`, and `resetToDemo()` persisting to `server/data/youtube_auth.json`.
+   - Active account defaults immediately to `RetroTechFan (Demo)` with preloaded `DEMO_CHANNELS` without requiring web OAuth or login forms.
+2. **Subscriptions Aggregation Feed (`/feed/subscriptions` & `/feed/channels`)**:
+   - Implemented `getSubscriptionsFeed(count = 15)`:
+     - Fetches recent videos across all subscribed channels concurrently.
+     - Strict video ID validation (length 11, alphanumeric, strictly excluding channel IDs like `UC...`).
+     - In-memory 3-minute caching for fast instant feed loads (<1s).
+   - Added `handleSubscriptionsPage()` rendering responsive Nokia J2ME card markup:
+     - Shows account name and subscribed channels count.
+     - Each entry renders title, duration badge, proxy thumbnail (`/image?url=...`), direct 3GP video stream link (`/video.3gp?url=...`), and RealPlayer launcher.
+     - Preserves strict 3GP streaming specification.
+   - Added `handleChannelsPage()`:
+     - Lists all active channel subscriptions with quick links to browse channel videos and instant `➖ Unsubscribe` links.
+     - Provides a `⚡ Reset to Default Demo Channels` action.
+3. **Dynamic Subscription Routes & Watch-Page Toggle**:
+   - Added `/subscribe` route (`GET https://www.youtube.com/subscribe?name=...`):
+     - Adds channel to persistent state if not already present.
+     - Returns instant J2ME confirmation page with navigation links back to Subscriptions Feed and Channels Manager.
+   - Added `/unsubscribe` route (`GET https://www.youtube.com/unsubscribe?name=...`):
+     - Removes channel from persistent state.
+     - Returns confirmation page with updated subscriber counts.
+   - Updated `handleWatchPage()`:
+     - Dynamically inspects current channel against active subscriptions.
+     - If subscribed: renders `L:https://www.youtube.com/unsubscribe?name=... \t ✔️ Subscribed (<Channel>) [Click to Unsubscribe]`.
+     - If not subscribed: renders `L:https://www.youtube.com/subscribe?name=... \t ➕ Subscribe to <Channel>`.
+   - Added Subscriptions Feed navigation links to YouTube home page, search page, and watch page.
+4. **Omnibox Shortcuts & Gateway Routing (`server/server.js`, `BrowserMIDlet.java`)**:
+   - Added gateway URL rewriting and search redirects for `subs`, `subscriptions`, `feed`, and `channels` to route directly to YouTube subscriptions/channels feed.
+   - Added client-side Omnibox detection in `BrowserMIDlet.java` for `subs`, `subscriptions`, `feed`, and `channels`.
+   - Added default `YouTube Subscriptions` bookmark to `StorageManager.java`.
+5. **Binary Budget & Verification**:
+   - Built with Eclipse ECJ via `./build.sh`:
+     - JAR size: **48,598 bytes** (strictly $\le$ 50,000 bytes budget).
+   - Verified all routes:
+     - `GET /page?url=https://www.youtube.com/feed/subscriptions`: returns 200 OK with `H1:My Subscriptions` and 3GP video listings.
+     - `GET /page?url=https://www.youtube.com/feed/channels`: returns 200 OK with `H1:Subscribed Channels` (5 demo channels).
+     - `GET /page?url=https://www.youtube.com/subscribe?name=...`: successfully subscribes, updating count to 6.
+     - `GET /page?url=https://www.youtube.com/unsubscribe?name=...`: successfully unsubscribes, restoring count to 5.
+     - Watch page dynamic subscribe toggle tested and verified.
+     - Shortcut `subs` tested and verified.
