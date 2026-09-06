@@ -9,4 +9,4 @@ Nokia-MIDlet-Auto-Select-SIM: 1
 Nokia-MIDlet-Network-Access: gprs
 MIDlet-Permissions: javax.microedition.io.Connector.http
 MIDlet-Jar-URL: NokiaBrowser.jar
-MIDlet-Jar-Size: 49147
+MIDlet-Jar-Size: 49587

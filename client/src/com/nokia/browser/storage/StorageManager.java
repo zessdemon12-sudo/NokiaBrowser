@@ -282,6 +282,7 @@ public class StorageManager {
                 addBookmarkMemory("YouTube Videos", "https://www.youtube.com");
                 addBookmarkMemory("KamTape Video Search", "search:kamtape");
                 addBookmarkMemory("KamTape Videos", "https://www.kamtape.com");
+                addBookmarkMemory("Arena AI: Max", "https://arena.ai/text/direct?model_a=max");
                 addBookmarkMemory("Bing Search", "https://www.bing.com");
                 addBookmarkMemory("FrogFind! (Retro Search)", "https://www.frogfind.com");
                 addBookmarkMemory("Wikipedia Mobile", "https://en.wikipedia.org");
@@ -323,6 +324,10 @@ public class StorageManager {
                 }
                 if (!bookmarkUrls.contains("https://www.kamtape.com")) {
                     addBookmarkMemory("KamTape Videos", "https://www.kamtape.com");
+                    needsSave = true;
+                }
+                if (!bookmarkUrls.contains("https://arena.ai/text/direct?model_a=max")) {
+                    addBookmarkMemory("Arena AI: Max", "https://arena.ai/text/direct?model_a=max");
                     needsSave = true;
                 }
                 if (!bookmarkUrls.contains("search:youtube")) {

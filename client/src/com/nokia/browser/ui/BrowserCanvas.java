@@ -446,6 +446,8 @@ public class BrowserCanvas extends Canvas {
                     midlet.showKamTapeSearchDialog();
                 } else if (el.url.equals("search:youtube") || el.url.startsWith("search:https://www.youtube.com") || el.url.startsWith("search:http://www.youtube.com") || el.url.startsWith("search:www.youtube.com") || el.url.startsWith("search:youtube.com") || ((el.url.indexOf("youtube.com/results") >= 0 || el.url.indexOf("youtube.com/search") >= 0) && el.url.indexOf("search_query=") < 0 && el.url.indexOf("q=") < 0)) {
                     midlet.showYouTubeSearchDialog();
+                } else if (el.url.startsWith("search:arena")) {
+                    midlet.showArenaPromptDialog();
                 } else if (el.url.startsWith("search:")) {
                     midlet.showSearchDialog();
                 } else {

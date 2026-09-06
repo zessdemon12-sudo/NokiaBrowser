@@ -21,6 +21,7 @@ const { spawn } = require('child_process');
 const kamtape = require('./kamtape');
 const frogfind = require('./frogfind');
 const youtube = require('./youtube');
+const arena = require('./arena');
 const { execFile } = require('child_process');
 
 const directStreamUrlCache = new Map();
@@ -1710,6 +1711,8 @@ const server = http.createServer(async (req, res) => {
             'A:https://stream.radioparadise.com/mp3-128\tRadio Paradise (Live MP3)',
             'HR:',
             'H2:Popular Links',
+            'L:https://arena.ai/text/direct?model_a=max\t🤖 Arena AI: Max Chat',
+            'L:search:arena\t💬 Prompt Arena Max',
             'L:https://www.youtube.com/search\t🔍 Search https://www.youtube.com/',
             'L:search:youtube\t🔍 YouTube Video Search',
             'L:https://www.youtube.com\tYouTube Mobile',
@@ -1777,6 +1780,15 @@ const server = http.createServer(async (req, res) => {
                 const q = targetUrl.replace(/^search:?(\s*frogfind)?\s*/i, '').trim();
                 const frogUrl = q ? ('https://www.frogfind.com/?q=' + encodeURIComponent(q)) : 'https://www.frogfind.com';
                 return frogfind.handleFrogFindPage(frogUrl, res, gatewayHost, decodeHtmlEntities, parseAndReflowHtml, formatPagePayload);
+            } else if (targetUrl.startsWith('search:arena') || targetUrl.startsWith('search arena')) {
+                const q = targetUrl.replace(/^search:?(\s*arena)?\s*/i, '').trim();
+                const arenaUrl = 'https://arena.ai/text/direct?model_a=max' + (q ? ('&q=' + encodeURIComponent(q)) : '');
+                return arena.handleArenaRequest(arenaUrl, req, res, gatewayHost, decodeHtmlEntities);
+            } else if (targetUrl === 'arena' || targetUrl === 'arena.ai' || targetUrl === 'arena/max' || targetUrl === 'arena.ai/max' || targetUrl === 'arena.ai/text/direct') {
+                targetUrl = 'https://arena.ai/text/direct?model_a=max';
+            } else if (targetUrl.startsWith('arena ') || targetUrl.startsWith('arena.ai ') || targetUrl.startsWith('max ')) {
+                const q = targetUrl.replace(/^(arena\.ai|arena|max)\s+/i, '').trim();
+                targetUrl = 'https://arena.ai/text/direct?model_a=max' + (q ? ('&q=' + encodeURIComponent(q)) : '');
             } else if (targetUrl.startsWith('search:robi') || targetUrl.startsWith('search robi')) {
                 targetUrl = 'http://wap.robi.com.bd';
             } else if (targetUrl === 'robi' || targetUrl.startsWith('robi/') ||
@@ -1796,6 +1808,11 @@ const server = http.createServer(async (req, res) => {
         if (targetUrl.includes('wap.robi.com.bd') || targetUrl.includes('robi.com.bd') ||
             targetUrl.includes('robi-internet') || targetUrl.includes('robi-inernet')) {
             return handleRobiPortalRequest(targetUrl, req, res, gatewayHost);
+        }
+
+        // Special Arena AI Direct Chat integration
+        if (arena.isArenaUrl(targetUrl)) {
+            return arena.handleArenaRequest(targetUrl, req, res, gatewayHost, decodeHtmlEntities);
         }
 
         // Special FrogFind search & reader proxy integration
@@ -1892,6 +1909,14 @@ const server = http.createServer(async (req, res) => {
             return youtube.handleYouTubeRequest('https://www.youtube.com/feed/channels', res, gatewayHost, decodeHtmlEntities);
         }
         const engine = parsedUrl.searchParams.get('engine') || 'bing';
+        if (engine === 'arena' || lq.startsWith('arena ') || lq.startsWith('arena:') || lq.startsWith('max ')) {
+            let cleanQ = q;
+            if (lq.startsWith('arena:')) cleanQ = q.substring(6).trim();
+            else if (lq.startsWith('arena ')) cleanQ = q.substring(6).trim();
+            else if (lq.startsWith('max ')) cleanQ = q.substring(4).trim();
+            const arenaUrl = 'https://arena.ai/text/direct?model_a=max' + (cleanQ ? ('&q=' + encodeURIComponent(cleanQ)) : '');
+            return arena.handleArenaRequest(arenaUrl, req, res, gatewayHost, decodeHtmlEntities);
+        }
         if (engine === 'frogfind') {
             const frogUrl = q ? ('https://www.frogfind.com/?q=' + encodeURIComponent(q)) : 'https://www.frogfind.com';
             return frogfind.handleFrogFindPage(frogUrl, res, gatewayHost, decodeHtmlEntities, parseAndReflowHtml, formatPagePayload);
@@ -2070,6 +2095,8 @@ function handleRobiPortalRequest(targetUrl, req, res, gatewayHost) {
         lines.push('P:• MCC: 470, MNC: 02 (Bangladesh)');
         lines.push('HR:');
         lines.push('H2:Popular Web Links');
+        lines.push('L:https://arena.ai/text/direct?model_a=max\t🤖 Arena AI: Max Chat');
+        lines.push('L:search:arena\t💬 Prompt Arena Max');
         lines.push('L:https://www.bing.com\tBing Search');
         lines.push('L:https://www.frogfind.com\tFrogFind! Search');
         lines.push('L:https://en.wikipedia.org\tWikipedia Mobile');
@@ -2092,6 +2119,7 @@ server.listen(PORT, '0.0.0.0', () => {
     console.log(` Target screen: 240x320 QVGA (Nokia S40 / S60)`);
     console.log(` HTTPS TLS 1.3 / 1.2: Enabled`);
     console.log(` Default Search: Bing (https://www.bing.com)`);
+    console.log(` Arena AI Direct Chat & Router: Enabled (arena.ai/max)`);
     console.log(` FrogFind Retro Search: Enabled (https://www.frogfind.com)`);
     console.log(` KamTape Video Playback & Search: Enabled (www.kamtape.com)`);
     console.log(` YouTube Video Playback & Search: Enabled (www.youtube.com)`);

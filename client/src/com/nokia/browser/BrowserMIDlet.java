@@ -36,6 +36,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     private TextBox frogFindBox;
     private TextBox kamTapeSearchBox;
     private TextBox youTubeSearchBox;
+    private TextBox arenaPromptBox;
     private List optionsList;
     private List bookmarksList;
     private List historyList;
@@ -229,6 +230,14 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         display.setCurrent(youTubeSearchBox);
     }
 
+    public void showArenaPromptDialog() {
+        arenaPromptBox = new TextBox("Arena AI: Max", "", 200, TextField.ANY);
+        arenaPromptBox.addCommand(cmdOk);
+        arenaPromptBox.addCommand(cmdCancel);
+        arenaPromptBox.setCommandListener(this);
+        display.setCurrent(arenaPromptBox);
+    }
+
     public void showOptionsMenu() {
         optionsList = new List("Browser Menu", List.IMPLICIT);
         optionsList.append("Enter URL (#)", null);
@@ -236,6 +245,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
         optionsList.append("FrogFind Retro Search", null);
         optionsList.append("KamTape Video Search", null);
         optionsList.append("YouTube Video Search", null);
+        optionsList.append("Arena AI: Max Chat", null);
         optionsList.append("Bookmarks (0)", null);
         optionsList.append("Add to Bookmarks", null);
         optionsList.append("History", null);
@@ -520,6 +530,25 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         loadUrl("http://wap.robi.com.bd", true);
                         return;
                     }
+
+                    // 5. Arena AI routing
+                    if (norm.equals("arena") || norm.equals("arena.ai") || norm.equals("arena/max") ||
+                        norm.equals("arena.ai/max") || norm.equals("arena.ai/text/direct") ||
+                        norm.equals("text/direct?model_a=max") || norm.equals("arena.ai/text/direct?model_a=max")) {
+                        showArenaPromptDialog();
+                        return;
+                    }
+                    if (norm.startsWith("arena ") || norm.startsWith("arena.ai ") || norm.startsWith("max ")) {
+                        int sp = norm.indexOf(' ');
+                        String q = norm.substring(sp + 1).trim();
+                        if (q.length() > 0) {
+                            loadUrl("https://arena.ai/text/direct?model_a=max&q=" + com.nokia.browser.net.NetworkManager.urlEncode(q), true);
+                        } else {
+                            showArenaPromptDialog();
+                        }
+                        return;
+                    }
+
                     if (lower.startsWith("search ") || lower.startsWith("? ")) {
                         int sp = target.indexOf(' ');
                         String q = target.substring(sp + 1).trim();
@@ -573,6 +602,18 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
             } else if (c == cmdCancel) {
                 display.setCurrent(canvas);
             }
+        } else if (d == arenaPromptBox) {
+            if (c == cmdOk) {
+                String q = arenaPromptBox.getString();
+                display.setCurrent(canvas);
+                if (q != null && q.trim().length() > 0) {
+                    loadUrl("https://arena.ai/text/direct?model_a=max&q=" + com.nokia.browser.net.NetworkManager.urlEncode(q.trim()), true);
+                } else {
+                    loadUrl("https://arena.ai/text/direct?model_a=max", true);
+                }
+            } else if (c == cmdCancel) {
+                display.setCurrent(canvas);
+            }
         } else if (d == optionsList) {
             if (c == cmdSelect || c == List.SELECT_COMMAND) {
                 int idx = optionsList.getSelectedIndex();
@@ -581,8 +622,9 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                 else if (idx == 2) showFrogFindSearchDialog();
                 else if (idx == 3) showKamTapeSearchDialog();
                 else if (idx == 4) showYouTubeSearchDialog();
-                else if (idx == 5) showBookmarks();
-                else if (idx == 6) {
+                else if (idx == 5) showArenaPromptDialog();
+                else if (idx == 6) showBookmarks();
+                else if (idx == 7) {
                     if (canvas.getPage() != null && canvas.getPage().url != null) {
                         storage.addBookmark(canvas.getPage().title, canvas.getPage().url);
                         Alert a = new Alert("Bookmark Added", "Saved: " + canvas.getPage().title, null, AlertType.CONFIRMATION);
@@ -590,17 +632,17 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         display.setCurrent(a, canvas);
                     }
                 }
-                else if (idx == 7) showHistory();
-                else if (idx == 8) {
+                else if (idx == 8) showHistory();
+                else if (idx == 9) {
                     if (canvas.getPage() != null && canvas.getPage().url != null) {
                         loadUrl(canvas.getPage().url, false);
                     }
                 }
-                else if (idx == 9) toggleOrientation();
-                else if (idx == 10) showSimNetworkSettings();
-                else if (idx == 11) showSettings();
-                else if (idx == 12) showAbout();
-                else if (idx == 13) exitBrowser();
+                else if (idx == 10) toggleOrientation();
+                else if (idx == 11) showSimNetworkSettings();
+                else if (idx == 12) showSettings();
+                else if (idx == 13) showAbout();
+                else if (idx == 14) exitBrowser();
             } else if (c == cmdBack) {
                 display.setCurrent(canvas);
             }
