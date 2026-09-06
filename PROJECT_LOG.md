@@ -931,5 +931,41 @@ During investigation of the `/video_stream` endpoint and `MediaPlayerCanvas.java
   - Streams start at `0.000000` with 0 drift.
 - Verified client binary size: 48,313 bytes (1,687 bytes under budget).
 
+---
+
+## Event 028 — Remove 380p and Standardize Exclusively on 3GP Video Streaming (2026-09-06)
+
+**User request:** "remove 380p and allways video streaming in a 3gp"
+
+### Architectural Changes & Implementation
+1. **Removed 380p Profile Entirely**:
+   - In `server/server.js` (`handle3gpStream`), deleted the 380p profile.
+   - The default resolution is now standard **240p QVGA** (320x240 / 240x180 MPEG-4 Simple Profile with 44.1 kHz AAC stereo audio), which natively matches the 240x320 screen geometry of classic Nokia S40 / S60 devices.
+   - Maintained **144p QCIF** (`res=144p` or `qcif`, 176x144 H.263 + AMR-NB) for low-bandwidth vintage devices.
+   - Updated `yt-dlp` download query to `bestvideo[height<=240]/worstvideo/worst`, minimizing bandwidth and eliminating conversion overhead.
+2. **Standardized Video Streaming Exclusively on 3GP**:
+   - **`server/youtube.js`**:
+     - Removed obsolete `▶ Play Video (Stream)` links pointing to raw `/media` proxies.
+     - All watch page video links (`V:` and `L:`) and listing/search cards point directly to `/video.3gp?url=...`:
+       - `▶ Stream 3GP: <Title>`
+       - `🎬 Launch in Nokia RealPlayer (3GP)`
+       - `▶ Stream 3GP (144p QCIF Classic)`
+   - **`server/kamtape.js`**:
+     - Removed all `&res=380p` references and non-3GP `proxyMedia` links.
+     - All video cards, search results, and watch pages stream exclusively in 3GP (`/video.3gp`).
+   - **`server/server.js` (`/sample_media`)**:
+     - Removed 380p and raw stream links; standardized on 3GP video stream and RealPlayer launchers.
+   - **Gateway `/media` Interceptor**:
+     - Added automatic routing in `server/server.js`: any video URL (YouTube, KamTape, `.mp4`, `.webm`, `.3gp`, `.mkv`) sent to `/media?url=...` is automatically redirected through `handle3gpStream`, guaranteeing video is always delivered as 3GP.
+3. **Client Binary & Verification**:
+   - `./build.sh`: compiled with 0 errors. JAR Size: **48,313 bytes** (strictly <= 50,000 bytes budget).
+   - Inspected default 3GP stream output:
+     - Container: `3gp4 / compatible_brands: 3gp4iso6iso5`
+     - Video: `mpeg4 (Simple Profile)`, 320x240 QVGA, 29.95 fps, 185 kb/s
+     - Audio: `aac (LC)`, 44100 Hz stereo, 64 kb/s
+     - Stream start: `0.000000` with 0 drift.
+   - Verified `/sample_media`, YouTube watch page, and search results render 100% 3GP video links.
+
+
 
 

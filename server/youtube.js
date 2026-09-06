@@ -230,22 +230,22 @@ async function handleWatchPage(videoId, originalUrl, res, gatewayHost, decodeHtm
         .replace(/\s+/g, ' ')
         .trim();
 
+    const watchUrl = originalUrl && originalUrl.startsWith('http') ? originalUrl : `https://www.youtube.com/watch?v=${videoId}`;
     const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(info.thumb)}`;
-    const threeGp380pUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}&res=380p`;
+    const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}`;
     const threeGp144pUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}&res=144p`;
     const durParam = info.durationSec ? `&dur=${info.durationSec}` : '';
-    const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(watchUrl)}${durParam}`;
+    const audioMedia = `http://${gatewayHost}/video_audio?url=${encodeURIComponent(watchUrl)}${durParam}`;
 
     lines.push('META:TITLE=' + cleanTitle + ' - YouTube');
     lines.push('META:URL=' + watchUrl);
     lines.push('META:HTTPS=1');
     lines.push('H1:' + cleanTitle);
     lines.push('I:' + proxyThumb + '\t' + cleanTitle);
-    lines.push('V:' + threeGp380pUrl + '\t▶ Play 3GP (380p HQ): ' + cleanTitle);
-    lines.push('L:' + threeGp380pUrl + '\t🎬 Launch in Nokia RealPlayer (380p 3GP)');
-    lines.push('V:' + threeGp144pUrl + '\t▶ Play 3GP (144p Classic Nokia)');
-    lines.push('V:' + proxyMedia + '\t▶ Play Video (Stream): ' + cleanTitle);
-    lines.push('A:' + proxyMedia + '\t♫ Audio: ' + cleanTitle);
+    lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + cleanTitle);
+    lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
+    lines.push('V:' + threeGp144pUrl + '\t▶ Stream 3GP (144p QCIF Classic)');
+    lines.push('A:' + audioMedia + '\t♫ Audio: ' + cleanTitle);
 
     let metaLine = 'Channel: ' + info.channel;
     if (info.views) metaLine += ' • ' + info.views;
@@ -320,13 +320,12 @@ async function handleSearchPage(query, originalUrl, res, gatewayHost) {
             const v = videos[i];
             const watchUrl = `https://www.youtube.com/watch?v=${v.id}`;
             const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(v.thumb)}`;
-            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}&res=380p`;
-            const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(watchUrl)}`;
+            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}`;
 
             lines.push('H2:' + v.title + (v.duration ? ` [${v.duration}]` : ''));
             lines.push('I:' + proxyThumb + '\t' + v.title);
-            lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP (380p): ' + v.title);
-            lines.push('V:' + proxyMedia + '\t▶ Play Video (Stream): ' + v.title);
+            lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + v.title);
+            lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
             if (v.channel || v.views) {
                 lines.push('P:' + (v.channel ? v.channel : '') + (v.views ? ' • ' + v.views : ''));
             }
@@ -374,13 +373,12 @@ async function handleHomePage(originalUrl, res, gatewayHost) {
             const v = videos[i];
             const watchUrl = `https://www.youtube.com/watch?v=${v.id}`;
             const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(v.thumb)}`;
-            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}&res=380p`;
-            const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(watchUrl)}`;
+            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}`;
 
             lines.push('H2:' + v.title + (v.duration ? ` [${v.duration}]` : ''));
             lines.push('I:' + proxyThumb + '\t' + v.title);
-            lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP (380p): ' + v.title);
-            lines.push('V:' + proxyMedia + '\t▶ Play Video (Stream): ' + v.title);
+            lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + v.title);
+            lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
             if (v.channel || v.views) {
                 lines.push('P:' + (v.channel ? v.channel : '') + (v.views ? ' • ' + v.views : ''));
             }

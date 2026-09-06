@@ -50,20 +50,19 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
 
         // Video Stream (KamTape webm=1 serves baseline MP4)
         const mp4Url = `https://www.kamtape.com/get_video?video_id=${videoId}&webm=1`;
-        const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(mp4Url)}`;
-        const threeGp380pUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${videoId}&res=380p`;
+        const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${videoId}`;
         const threeGp144pUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${videoId}&res=144p`;
+        const audioUrl = `http://${gatewayHost}/video_audio?url=${encodeURIComponent(mp4Url)}`;
 
         lines.push('META:TITLE=' + title + ' - KamTape');
         lines.push('META:URL=' + baseUrl);
         lines.push('META:HTTPS=1');
         lines.push('H1:' + title);
         lines.push('I:' + proxyThumb + '\t' + title);
-        lines.push('V:' + threeGp380pUrl + '\t▶ Play 3GP (380p HQ): ' + title);
-        lines.push('L:' + threeGp380pUrl + '\t🎬 Launch in Nokia RealPlayer (380p 3GP)');
-        lines.push('V:' + threeGp144pUrl + '\t▶ Play 3GP (144p Classic Nokia)');
-        lines.push('V:' + proxyMedia + '\t▶ Play Video (Stream): ' + title);
-        lines.push('A:' + proxyMedia + '\t♫ Audio: ' + title);
+        lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + title);
+        lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
+        lines.push('V:' + threeGp144pUrl + '\t▶ Stream 3GP (144p QCIF Classic)');
+        lines.push('A:' + audioUrl + '\t♫ Audio: ' + title);
         if (uploader) {
             lines.push('P:Uploader: ' + uploader);
         }
@@ -157,14 +156,13 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
 
         const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(thumbUrl)}`;
         const mp4Url = `https://www.kamtape.com/get_video?video_id=${vId}&webm=1`;
-        const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(mp4Url)}`;
-        const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${vId}&res=380p`;
+        const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${vId}`;
 
         count++;
         lines.push('H2:' + vTitle + (runtime ? ` [${runtime}]` : ''));
         lines.push('I:' + proxyThumb + '\t' + vTitle);
-        lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP (380p): ' + vTitle);
-        lines.push('V:' + proxyMedia + '\t▶ Play Video (Stream): ' + vTitle);
+        lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + vTitle);
+        lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
         if (desc) {
             lines.push('P:' + desc);
         }
@@ -180,20 +178,18 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
             const vId = m[1];
             if (seenVideos[vId]) continue;
             seenVideos[vId] = true;
-
             const thumbUrl = m[2];
             const vTitle = decodeHtmlEntities(m[3].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()) || ('Video ' + vId);
 
             const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(thumbUrl)}`;
             const mp4Url = `https://www.kamtape.com/get_video?video_id=${vId}&webm=1`;
-            const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(mp4Url)}`;
-            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${vId}&res=380p`;
+            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${vId}`;
 
             count++;
             lines.push('H2:' + vTitle);
             lines.push('I:' + proxyThumb + '\t' + vTitle);
-            lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP (380p): ' + vTitle);
-            lines.push('V:' + proxyMedia + '\t▶ Play Video (Stream): ' + vTitle);
+            lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + vTitle);
+            lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
             lines.push('L:https://www.kamtape.com/watch?v=' + vId + '\tDetails & Related');
             lines.push('HR:');
         }
@@ -211,11 +207,10 @@ function parseKamTapePage(html, baseUrl, gatewayHost, decodeHtmlEntities) {
                 seenVideos[vId] = true;
                 count++;
                 const mp4Url = `https://www.kamtape.com/get_video?video_id=${vId}&webm=1`;
-                const proxyMedia = `http://${gatewayHost}/media?url=${encodeURIComponent(mp4Url)}`;
-                const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${vId}&res=380p`;
+                const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(mp4Url)}&id=${vId}`;
                 lines.push('H2:' + text);
-                lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP (380p): ' + text);
-                lines.push('V:' + proxyMedia + '\t▶ Play Video: ' + text);
+                lines.push('V:' + threeGpUrl + '\t▶ Stream 3GP: ' + text);
+                lines.push('L:' + threeGpUrl + '\t🎬 Launch in Nokia RealPlayer (3GP)');
                 lines.push('L:https://www.kamtape.com/watch?v=' + vId + '\tWatch on KamTape');
                 lines.push('HR:');
             }

@@ -412,14 +412,12 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
         } catch (e) {
             reqUrl = new URL(targetUrl, `http://${gatewayHost}`);
         }
-        const rawRes = (reqUrl.searchParams.get('res') || reqUrl.searchParams.get('q') || '380p').toLowerCase();
-        let resProfile = '380p';
+        const rawRes = (reqUrl.searchParams.get('res') || reqUrl.searchParams.get('q') || '240p').toLowerCase();
+        let resProfile = '240p';
         if (rawRes === '144p' || rawRes === 'qcif') {
             resProfile = '144p';
-        } else if (rawRes === '240p' || rawRes === 'qvga') {
-            resProfile = '240p';
         } else {
-            resProfile = '380p'; // default: up to 380p high quality
+            resProfile = '240p'; // default: 240p QVGA (authentic Nokia screen resolution)
         }
 
         let videoUrl = targetUrl;
@@ -471,7 +469,8 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             audioArgs = ['-ar', '8000', '-ac', '1', '-b:a', '12.2k'];
             sizeArgs = ['-s', '176x144'];
             videoFilter = null;
-        } else if (resProfile === '240p') {
+        } else {
+            // 240p QVGA profile (default: up to 240p, MPEG-4 Simple Profile + AAC stereo in 3GP)
             vcodec = 'mpeg4';
             vbitrate = '350k';
             fps = null; // Native video framerate to ensure 1.0x normal real-time speed
@@ -479,15 +478,6 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             audioArgs = ['-ar', '44100', '-ac', '2', '-b:a', '64k'];
             sizeArgs = null;
             videoFilter = "scale='min(320,iw)':min'(240,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
-        } else {
-            // 380p profile (up to 380p, MPEG-4 Simple Profile + AAC stereo in 3GP)
-            vcodec = 'mpeg4';
-            vbitrate = '550k';
-            fps = null; // Native video framerate to ensure 1.0x normal real-time speed
-            acodec = 'aac';
-            audioArgs = ['-ar', '44100', '-ac', '2', '-b:a', '96k'];
-            sizeArgs = null;
-            videoFilter = "scale='min(640,iw)':min'(380,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2";
         }
 
         const isYt = youtube.isYouTubeUrl(videoUrl);
@@ -509,9 +499,7 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
 
                 const ytFormat = resProfile === '144p'
                     ? 'bestvideo[height<=144]/worstvideo/worst'
-                    : (resProfile === '240p'
-                        ? 'bestvideo[height<=240]/worstvideo/worst'
-                        : 'bestvideo[height<=380]/bestvideo[height<=360]/worstvideo/worst');
+                    : 'bestvideo[height<=240]/worstvideo[height<=144]/worst';
 
                 console.log(`[3GP Streamer] Downloading YouTube streams for ${cacheKey} (${ytFormat})...`);
                 await Promise.all([
@@ -597,7 +585,7 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
             return res.end('Failed to fetch remote video: ' + mediaResp.statusText);
         }
 
-        // Spawn ffmpeg to transcode to authentic 3GP (up to 380p MPEG-4+AAC or 144p H.263+AMR)
+        // Spawn ffmpeg to transcode to authentic 3GP (240p QVGA MPEG-4+AAC or 144p H.263+AMR)
         const ffmpegArgs = [
             '-y',
             '-i', 'pipe:0',
@@ -1064,7 +1052,7 @@ const server = http.createServer(async (req, res) => {
             const ytDlpPath = path.join(__dirname, '..', 'tools', 'yt-dlp');
             const ytProc = spawn(ytDlpPath, [
                 '-o', '-',
-                '-f', 'bestvideo[height<=380]/bestvideo[height<=360]/worstvideo/160/133/278/18/worst',
+                '-f', 'bestvideo[height<=240]/bestvideo[height<=360]/worstvideo/160/133/278/18/worst',
                 '--no-warnings',
                 videoUrl
             ]);
@@ -1388,19 +1376,17 @@ const server = http.createServer(async (req, res) => {
             'H1:Media & Video Test',
             'P:Testing Mobile Media API (MMAPI) video playback on Nokia J2ME 240x320.',
             'H2:Featured KamTape Video',
-            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1&res=380p\t▶ Stream 3GP (380p HQ): Mega Man X',
-            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1&res=380p\t🎬 Launch in Nokia RealPlayer (380p 3GP)',
+            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t▶ Stream 3GP Video: Mega Man X',
+            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t🎬 Launch in Nokia RealPlayer (3GP)',
             'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1&res=144p\t▶ Stream 3GP (144p Classic Nokia)',
-            'V:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t▶ Play Video (Stream): Mega Man X',
             'A:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.kamtape.com%2Fget_video%3Fvideo_id%3DIV0P5qK75H8%26webm%3D1\t♫ Audio: Mega Man X (KamTape)',
             'L:search:kamtape\t🔍 Search KamTape Retro Videos',
             'L:https://www.kamtape.com\tBrowse All KamTape Videos',
             'HR:',
             'H2:Featured YouTube Video',
-            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU&res=380p\t▶ Stream 3GP (380p HQ): Nokia 6300 Ad',
-            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU&res=380p\t🎬 Launch in Nokia RealPlayer (380p 3GP)',
+            'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU\t▶ Stream 3GP Video: Nokia 6300 Ad',
+            'L:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU\t🎬 Launch in Nokia RealPlayer (3GP)',
             'V:http://' + gatewayHost + '/video.3gp?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU&id=iGw5FlQXmrU&res=144p\t▶ Stream 3GP (144p Classic Nokia)',
-            'V:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU\t▶ Play Video (Stream): Nokia 6300 Ad',
             'A:http://' + gatewayHost + '/media?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3DiGw5FlQXmrU\t♫ Audio: Nokia 6300 Ad (YouTube)',
             'L:https://www.youtube.com/watch?v=iGw5FlQXmrU\tWatch on YouTube',
             'L:https://www.youtube.com/search\t🔍 Search https://www.youtube.com/',
@@ -1552,12 +1538,15 @@ const server = http.createServer(async (req, res) => {
         return handle3gpStream(req, res, videoUrl, gatewayHost);
     }
 
-    // Media Streaming (Audio & Video MP4/3GP)
+    // Media Streaming (Always 3GP for video, handleMediaProxy for audio/static)
     if (pathname === '/media') {
         const mediaUrl = parsedUrl.searchParams.get('url');
         if (!mediaUrl) {
             res.writeHead(400, { 'Content-Type': 'text/plain' });
             return res.end('Missing media url');
+        }
+        if (youtube.isYouTubeUrl(mediaUrl) || mediaUrl.includes('kamtape.com') || mediaUrl.match(/\.(mp4|webm|mkv|flv|avi|mov|3gp)$/i)) {
+            return handle3gpStream(req, res, mediaUrl, gatewayHost);
         }
         return handleMediaProxy(req, res, mediaUrl);
     }
