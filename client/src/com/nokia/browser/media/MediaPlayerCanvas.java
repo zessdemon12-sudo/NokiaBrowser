@@ -92,7 +92,7 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         this.isVideo = isVideo;
         this.storage = storage;
         this.simManager = (storage != null) ? new SimManager(storage) : null;
-        this.gatewayUrl = (storage != null && storage.getGatewayUrl() != null) ? storage.getGatewayUrl() : "http://bore.pub:28080";
+        this.gatewayUrl = (storage != null && storage.getGatewayUrl() != null) ? storage.getGatewayUrl() : StorageManager.DEFAULT_GATEWAY;
 
         this.fontSmallBold = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_BOLD, Font.SIZE_SMALL);
         this.fontSmallPlain = Font.getFont(Font.FACE_SYSTEM, Font.STYLE_PLAIN, Font.SIZE_SMALL);

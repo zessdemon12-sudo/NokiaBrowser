@@ -103,9 +103,10 @@ public class SimManager {
             }
         } catch (Throwable t) {}
 
-        // Carrier operator detection
-        if ("470".equals(detectedCountryCode) && ("02".equals(detectedNetworkCode) || "2".equals(detectedNetworkCode))) {
-            detectedOperator = "Robi Axiata";
+        // Carrier operator detection (Bangladesh MCC 470)
+        if ("470".equals(detectedCountryCode) && detectedNetworkCode != null && detectedNetworkCode.length() > 0) {
+            char c = detectedNetworkCode.charAt(detectedNetworkCode.length() - 1);
+            detectedOperator = (c == '1') ? "Grameenphone" : (c == '2') ? "Robi" : (c == '3') ? "Banglalink" : (c == '4') ? "Teletalk" : (c == '7') ? "Airtel" : detectedOperator;
         }
     }
 
@@ -168,14 +169,12 @@ public class SimManager {
     public String getBearerName() {
         int b = storage.getNetworkBearer();
         switch (b) {
-            case BEARER_GPRS:  return "GPRS (2G)";
-            case BEARER_EDGE:  return "EDGE (2.5G)";
-            case BEARER_3G:    return "3G (WCDMA)";
-            case BEARER_HSDPA: return "3.5G (HSDPA)";
-            case BEARER_WIFI:  return "WiFi / WLAN";
-            case BEARER_AUTO:
-            default:
-                return "EDGE (Auto)";
+            case BEARER_GPRS:  return "GPRS";
+            case BEARER_EDGE:  return "EDGE";
+            case BEARER_3G:    return "3G";
+            case BEARER_HSDPA: return "HSDPA";
+            case BEARER_WIFI:  return "WiFi";
+            default:           return "EDGE";
         }
     }
 
@@ -246,27 +245,17 @@ public class SimManager {
     public boolean isRoaming() { return isRoaming; }
     public boolean isDualSim() { return isDualSimDevice; }
 
-    public String getMaskedImei() {
-        if (detectedImei == null || detectedImei.length() < 6) return "35892100******";
-        return detectedImei.substring(0, 6) + "******" + detectedImei.substring(detectedImei.length() - 2);
+    private static String mask(String s, int p) {
+        if (s == null || s.length() <= p) return "******";
+        return s.substring(0, p) + "******" + s.substring(s.length() - 2);
     }
 
-    public String getMaskedImsi() {
-        if (detectedImsi == null || detectedImsi.length() < 5) return "310260******";
-        return detectedImsi.substring(0, 5) + "******" + detectedImsi.substring(detectedImsi.length() - 2);
-    }
+    public String getMaskedImei() { return mask(detectedImei, 6); }
+    public String getMaskedImsi() { return mask(detectedImsi, 5); }
 
-    public static String formatBytes(long bytes) {
-        if (bytes < 1024) {
-            return bytes + " B";
-        } else if (bytes < 1024 * 1024) {
-            long kb = bytes / 1024;
-            long dec = (bytes % 1024) * 10 / 1024;
-            return kb + "." + dec + " KB";
-        } else {
-            long mb = bytes / (1024 * 1024);
-            long dec = (bytes % (1024 * 1024)) * 10 / (1024 * 1024);
-            return mb + "." + dec + " MB";
-        }
+    public static String formatBytes(long b) {
+        if (b < 1024) return b + " B";
+        if (b < 1048576) return (b / 1024) + "." + ((b % 1024) * 10 / 1024) + " KB";
+        return (b / 1048576) + "." + ((b % 1048576) * 10 / 1048576) + " MB";
     }
 }

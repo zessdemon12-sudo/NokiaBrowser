@@ -89,6 +89,7 @@ public class NetworkManager {
 
     private void applyCellularHeaders(HttpConnection conn) {
         setSafeHeader(conn, "User-Agent", "Nokia6300/2.0 (07.21) Profile/MIDP-2.0 Configuration/CLDC-1.1 (SIM; " + simManager.getBearerBadge() + ")");
+        setSafeHeader(conn, "Bypass-Tunnel-Reminder", "1");
         setSafeHeader(conn, "X-Nokia-SIM", String.valueOf(simManager.getActiveSim() + 1));
         setSafeHeader(conn, "X-Nokia-Bearer", simManager.getBearerBadge());
         setSafeHeader(conn, "X-Nokia-Operator", simManager.getDetectedOperator());
@@ -183,10 +184,9 @@ public class NetworkManager {
             if (msg == null || msg.length() == 0) msg = lastException.getClass().getName();
             String gw = storage.getGatewayUrl();
             if (gw != null && (gw.indexOf("127.0.0.1") >= 0 || gw.indexOf("localhost") >= 0)) {
-                callback.onError("Loopback (127.0.0.1):\nSet PC IP/Tunnel in Settings");
-            } else if (msg.indexOf("53") >= 0 || msg.indexOf("HTTP operation") >= 0 ||
-                       msg.indexOf("refused") >= 0 || msg.indexOf("Connect") >= 0) {
-                callback.onError("Gateway unreachable:\n" + gw + "\nCheck server/tunnel in Settings");
+                callback.onError("Loopback (127.0.0.1):\nSet Server in Settings");
+            } else if (msg.indexOf("53") >= 0 || msg.indexOf("HTTP") >= 0 || msg.indexOf("refused") >= 0) {
+                callback.onError("Gateway unreachable:\n" + gw);
             } else {
                 callback.onError("Cellular error (" + simManager.getBearerBadge() + "):\n" + msg);
             }

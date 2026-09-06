@@ -12,6 +12,7 @@ public class StorageManager {
     private static final String RS_BOOKMARKS = "nb_bookmarks";
     private static final String RS_HISTORY = "nb_history";
 
+    public static final String DEFAULT_GATEWAY = "http://robi-nokia-wap.loca.lt";
     private String gatewayUrl;
     private boolean loadImages;
     private int fontSize; // 0=small, 1=medium, 2=large
@@ -21,7 +22,7 @@ public class StorageManager {
     private Vector historyList;
 
     public StorageManager() {
-        this.gatewayUrl = "http://bore.pub:28080";
+        this.gatewayUrl = DEFAULT_GATEWAY;
         this.loadImages = true;
         this.fontSize = 1;
 
@@ -184,8 +185,8 @@ public class StorageManager {
                 byte[] b2 = rs.getRecord(2);
                 byte[] b3 = rs.getRecord(3);
                 gatewayUrl = new String(b1);
-                if (gatewayUrl != null && (gatewayUrl.indexOf("127.0.0.1") >= 0 || gatewayUrl.indexOf("localhost") >= 0)) {
-                    gatewayUrl = "http://bore.pub:28080";
+                if (gatewayUrl != null && (gatewayUrl.indexOf("127.0.0.1") >= 0 || gatewayUrl.indexOf("localhost") >= 0 || gatewayUrl.indexOf("bore.pub") >= 0 || gatewayUrl.indexOf("nokia-robi") >= 0)) {
+                    gatewayUrl = DEFAULT_GATEWAY;
                     needsSave = true;
                 }
                 loadImages = "1".equals(new String(b2));

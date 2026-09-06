@@ -1926,7 +1926,7 @@ const server = http.createServer(async (req, res) => {
     if (pathname === '/image') {
         const imgUrl = parsedUrl.searchParams.get('url');
         let maxW = parseInt(parsedUrl.searchParams.get('w') || '220');
-        if (nokiaDataSaver || nokiaBearer === 'G') {
+        if (nokiaDataSaver || nokiaBearer === 'G' || nokiaBearer === 'E') {
             maxW = Math.min(maxW, 160);
         }
         if (!imgUrl) {

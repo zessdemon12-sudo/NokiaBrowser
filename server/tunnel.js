@@ -1,70 +1,49 @@
 /**
  * Nokia Browser Cellular Tunnel Helper
  * 
- * Uses tools/bore to establish a zero-config, raw TCP plain HTTP tunnel
- * on bore.pub, allowing vintage Nokia devices on 2G EDGE cellular networks
- * to reach the local gateway server without SSL/TLS certificates or NAT issues.
+ * Uses localtunnel to establish an HTTP Port 80 public tunnel with fixed
+ * subdomain 'nokia-robi', allowing vintage Nokia devices on 2G EDGE cellular
+ * networks (including ROBI-WAP 2.0 proxy 10.16.18.77:9028 and Robi-INTERNET)
+ * to connect on standard Port 80 without port restrictions or TLS negotiation issues.
  */
 
-const { spawn, execSync } = require('child_process');
-const path = require('path');
-const fs = require('fs');
+const localtunnel = require('localtunnel');
 
-const BORE_PATH = path.join(__dirname, '..', 'tools', 'bore');
-const LOCAL_PORT = process.env.PORT || '8080';
+const LOCAL_PORT = parseInt(process.env.PORT || '8080', 10);
+const SUBDOMAIN = process.env.TUNNEL_SUBDOMAIN || 'robi-nokia-wap';
 
-if (!fs.existsSync(BORE_PATH)) {
-    console.log('Downloading tools/bore client from github releases...');
+async function startTunnel() {
     try {
-        execSync(`mkdir -p "${path.dirname(BORE_PATH)}" && curl -sL https://github.com/ekzhang/bore/releases/download/v0.5.1/bore-v0.5.1-x86_64-unknown-linux-musl.tar.gz | tar -xz -C "${path.dirname(BORE_PATH)}" && chmod +x "${BORE_PATH}"`);
-    } catch (e) {
-        console.error('[Tunnel Error]: Failed to download tools/bore:', e.message);
-        process.exit(1);
-    }
-}
+        console.log(`Starting cellular tunnel on port ${LOCAL_PORT} (subdomain: ${SUBDOMAIN})...`);
+        const tunnel = await localtunnel({ port: LOCAL_PORT, subdomain: SUBDOMAIN });
 
-const TARGET_REMOTE_PORT = process.env.BORE_PORT || '28080';
-console.log('Starting cellular tunnel to port ' + LOCAL_PORT + ' via bore.pub (port ' + TARGET_REMOTE_PORT + ')...');
-
-const proc = spawn(BORE_PATH, ['local', LOCAL_PORT, '--to', 'bore.pub', '--port', TARGET_REMOTE_PORT], {
-    stdio: ['ignore', 'pipe', 'pipe']
-});
-
-let assignedPort = null;
-
-function handleOutput(data) {
-    const text = data.toString();
-    const m = text.match(/remote_port=(\d+)/) || text.match(/bore\.pub:(\d+)/);
-    if (m && !assignedPort) {
-        assignedPort = m[1];
-        const publicUrl = `http://bore.pub:${assignedPort}`;
+        const url = tunnel.url.replace('https://', 'http://');
         console.log('\n' + '='.repeat(64));
-        console.log(' 🌐 Nokia Browser Cellular Gateway Online');
+        console.log(' 🌐 Nokia Browser Cellular Gateway Online (Port 80 / WAP 2.0)');
         console.log('='.repeat(64));
         console.log(' Public Gateway URL:');
-        console.log(`   ${publicUrl}`);
+        console.log(`   ${url}`);
         console.log('\n 📱 Instructions for your Nokia Phone:');
+        console.log('   Works on BOTH ROBI-WAP 2.0 and Robi-INTERNET!');
         console.log('   1. Open Nokia Browser on your phone');
         console.log('   2. Select: Options -> Settings');
-        console.log('   3. Change "Gateway URL:" to:');
-        console.log(`      ${publicUrl}`);
-        console.log('   4. Select OK to save and browse freely over cellular (EDGE)!');
+        console.log('   3. Set "Gateway URL:" to:');
+        console.log(`      ${url}`);
+        console.log('   4. Select OK to save and browse freely!');
         console.log('='.repeat(64) + '\n');
+
+        tunnel.on('close', () => {
+            console.log('[Tunnel] Tunnel closed, reconnecting in 3s...');
+            setTimeout(startTunnel, 3000);
+        });
+
+        tunnel.on('error', (err) => {
+            console.error('[Tunnel Error]:', err.message);
+        });
+    } catch (e) {
+        console.error('[Tunnel Init Error]:', e.message);
+        setTimeout(startTunnel, 5000);
     }
 }
 
-proc.stdout.on('data', handleOutput);
-proc.stderr.on('data', handleOutput);
-
-proc.on('close', (code) => {
-    console.log(`[Tunnel] Process exited with code ${code}`);
-});
-
-process.on('SIGINT', () => {
-    proc.kill('SIGINT');
-    process.exit(0);
-});
-process.on('SIGTERM', () => {
-    proc.kill('SIGTERM');
-    process.exit(0);
-});
+startTunnel();

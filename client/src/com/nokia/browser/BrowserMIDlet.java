@@ -518,14 +518,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                     }
 
                     // 4. Robi routing (Robi-INTERNET)
-                    if (norm.equals("robi") || norm.equals("robi-internet") || norm.equals("robi-inernet") ||
-                        norm.equals("robi internet") || norm.equals("wap.robi.com.bd") || norm.equals("wap.robi.com.bd/") ||
-                        norm.equals("robi.com.bd") || norm.equals("robi.com.bd/")) {
-                        storage.setApnPreset(com.nokia.browser.net.SimManager.APN_ROBI);
-                        loadUrl("http://wap.robi.com.bd", true);
-                        return;
-                    }
-                    if (norm.startsWith("robi ") || norm.startsWith("robi-internet ") || norm.startsWith("robi-inernet ")) {
+                    if (norm.startsWith("robi") || norm.indexOf("robi.com.bd") >= 0) {
                         storage.setApnPreset(com.nokia.browser.net.SimManager.APN_ROBI);
                         loadUrl("http://wap.robi.com.bd", true);
                         return;
