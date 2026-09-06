@@ -943,31 +943,33 @@ async function handleImageProxy(res, targetUrl, maxWidth = 220) {
 
         // YouTube fallback retry logic
         if (!resp || !resp.ok) {
-            const ytMatch = cleanUrl.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
-            if (ytMatch && ytMatch[1]) {
-                const ytId = ytMatch[1];
-                const ytFallbacks = [
-                    `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`,
-                    `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
-                    `https://i.ytimg.com/vi/${ytId}/default.jpg`
-                ];
-                for (const fbUrl of ytFallbacks) {
-                    if (fbUrl !== cleanUrl) {
-                        try {
-                            console.log(`[Image Proxy] YouTube fallback retry: ${fbUrl}`);
-                            const fbResp = await fetch(fbUrl, {
-                                headers: {
-                                    'User-Agent': USER_AGENT,
-                                    'Accept': 'image/jpeg,image/*;q=0.8',
-                                    'Referer': 'https://www.youtube.com/'
+            if (cleanUrl.includes('youtube.com') || cleanUrl.includes('ytimg.com') || cleanUrl.includes('youtu.be')) {
+                const ytMatch = cleanUrl.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]{11})\//);
+                if (ytMatch && ytMatch[1]) {
+                    const ytId = ytMatch[1];
+                    const ytFallbacks = [
+                        `https://i.ytimg.com/vi/${ytId}/mqdefault.jpg`,
+                        `https://i.ytimg.com/vi/${ytId}/hqdefault.jpg`,
+                        `https://i.ytimg.com/vi/${ytId}/default.jpg`
+                    ];
+                    for (const fbUrl of ytFallbacks) {
+                        if (fbUrl !== cleanUrl) {
+                            try {
+                                console.log(`[Image Proxy] YouTube fallback retry: ${fbUrl}`);
+                                const fbResp = await fetch(fbUrl, {
+                                    headers: {
+                                        'User-Agent': USER_AGENT,
+                                        'Accept': 'image/jpeg,image/*;q=0.8',
+                                        'Referer': 'https://www.youtube.com/'
+                                    }
+                                });
+                                if (fbResp.ok) {
+                                    resp = fbResp;
+                                    cleanUrl = fbUrl;
+                                    break;
                                 }
-                            });
-                            if (fbResp.ok) {
-                                resp = fbResp;
-                                cleanUrl = fbUrl;
-                                break;
-                            }
-                        } catch (e) {}
+                            } catch (e) {}
+                        }
                     }
                 }
             }
