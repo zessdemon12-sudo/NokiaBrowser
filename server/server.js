@@ -952,8 +952,33 @@ const server = http.createServer(async (req, res) => {
         // Write 8-byte Stream Header: Magic 'NVID' (4 bytes) + Total duration ms (4 bytes uint32BE)
         const streamHdr = Buffer.alloc(8);
         streamHdr.write('NVID', 0);
+        let durMs = 0;
         const durParam = parsedUrl.searchParams.get('dur');
-        const durMs = durParam ? Math.round(parseFloat(durParam) * 1000) : 0;
+        if (durParam) {
+            durMs = Math.round(parseFloat(durParam) * 1000);
+        } else {
+            const vidId = parsedUrl.searchParams.get('id') || (youtube.isYouTubeUrl(videoUrl) ? youtube.extractVideoId(videoUrl) : null);
+            if (vidId) {
+                const dSec = youtube.getVideoDuration(vidId);
+                if (dSec > 0) {
+                    durMs = Math.round(dSec * 1000);
+                }
+            }
+        }
+        if (durMs === 0 && youtube.isYouTubeUrl(videoUrl)) {
+            const vidId = parsedUrl.searchParams.get('id') || youtube.extractVideoId(videoUrl);
+            if (vidId) {
+                try {
+                    const info = await Promise.race([
+                        youtube.getVideoInfo(vidId),
+                        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500))
+                    ]);
+                    if (info && info.durationSec > 0) {
+                        durMs = Math.round(info.durationSec * 1000);
+                    }
+                } catch (e) {}
+            }
+        }
         streamHdr.writeUInt32BE(durMs, 4);
         res.write(streamHdr);
 

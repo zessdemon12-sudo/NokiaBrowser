@@ -1055,3 +1055,43 @@ Subscriptions feed"
      - `GET /page?url=https://www.youtube.com/unsubscribe?name=...`: successfully unsubscribes, restoring count to 5.
      - Watch page dynamic subscribe toggle tested and verified.
      - Shortcut `subs` tested and verified.
+
+---
+
+## Event 031 — Video Streaming Player Duration and End Time Display (2026-09-06)
+
+**User request:** "why don't showing end time in video streaming player" (with user screenshot showing `--:--` circled on player)
+
+### Root Cause Analysis
+1. **Omission of Duration Parameter in Stream URLs**:
+   - In `server/youtube.js` and `server/kamtape.js`, video links (`V:http://${gatewayHost}/video.3gp?url=...&id=...`) were constructed without appending the video duration (`&dur=...`), even though duration metadata was already parsed in search results (`item.duration`), feed results, and watch pages (`info.durationSec`).
+2. **Missing Duration Resolution in `/video_stream`**:
+   - In `server/server.js`, the `/video_stream` endpoint read `const durParam = parsedUrl.searchParams.get('dur')`. When `durParam` was null, `durMs` defaulted to `0` and was written directly into the 8-byte `NVID` stream header (`streamHdr.writeUInt32BE(0, 4)`).
+   - The server made no attempt to check video caches or resolve duration by video ID.
+3. **Client `durationUs` Fallback & Unbound Progress Bar**:
+   - In `client/src/com/nokia/browser/media/MediaPlayerCanvas.java`, the client read `durMs = streamDis.readInt()`. Because `durMs` was 0, `durationUs` remained `-1`.
+   - The UI formatted `durTimeStr = durationUs > 0 ? formatTime(durationUs) : "--:--"`, displaying `--:--` instead of the video's actual end time, and the progress bar remained at 0% width throughout playback.
+
+### Architectural Changes & Implementation
+1. **Duration Extraction & Global Caching (`server/youtube.js`)**:
+   - Added `parseDurationToSec(dur)` helper to parse `"M:SS"`, `"H:MM:SS"`, and numeric seconds.
+   - Added `videoDurationCache` with `setVideoDuration(videoId, sec)` and `getVideoDuration(videoId)`.
+   - Updated `searchYouTube`, `getVideoInfo`, and `getSubscriptionsFeed` to parse and store `durationSec` in `videoDurationCache`.
+   - Updated `handleSubscriptionsPage`, `handleWatchPage`, `handleSearchPage`, and `handleHomePage` to compute `durSec` and append `&dur=${durSec}` to all `threeGpUrl` and `threeGp144pUrl` links.
+2. **Server Stream Header Resolution (`server/server.js`)**:
+   - In `/video_stream`, if `dur` query param is absent, automatically resolve duration via `id` / `videoDurationCache` or cached `getVideoInfo` before sending the 8-byte `NVID` stream header.
+   - Verified `/video_stream` transmits valid `durMs` (e.g. `163000` ms for 2:43 video).
+3. **Client Pre-Extraction & Display (`MediaPlayerCanvas.java`)**:
+   - In `MediaPlayerCanvas` constructor, added `extractDurationFromUrl(mediaUrl)` to extract `dur=` immediately upon player launch, guaranteeing `durationUs` is set from frame 0.
+   - Updated `buildStreamUrl` to forward `&dur=` to `/video_stream`.
+   - Updated `seekRelative` to guard against seeking past `durationUs`.
+   - Updated `formatTime` to support hour-long videos (`H:MM:SS`).
+4. **Binary Budget & Verification**:
+   - Executed `./build.sh`:
+     - JAR size: **48,927 bytes** (strictly $\le$ 50,000 bytes budget).
+   - Automated testing:
+     - Search results render `&dur=163` for `Say "I hate happiness" without using the letter H [2:43]`.
+     - Subscriptions feed renders `&dur=266` for Drake - NOKIA.
+     - Watch page renders `&dur=265` for 3GP and 144p links.
+     - Home page renders `&dur=...` for all featured videos.
+     - Reading `/video_stream` 8-byte header confirms `Magic: NVID, durMs: 163000 (163.0s)`.

@@ -108,7 +108,27 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         this.animFrame = 0;
         this.frameBuffer = new byte[32768];
 
+        extractDurationFromUrl(mediaUrl);
+
         startPlayback();
+    }
+
+    private void extractDurationFromUrl(String url) {
+        if (url == null) return;
+        int idx = url.indexOf("dur=");
+        if (idx >= 0) {
+            int start = idx + 4;
+            int end = url.indexOf('&', start);
+            if (end < 0) end = url.indexOf('#', start);
+            if (end < 0) end = url.length();
+            try {
+                String durStr = url.substring(start, end);
+                long sec = Long.parseLong(durStr);
+                if (sec > 0) {
+                    this.durationUs = sec * 1000000L;
+                }
+            } catch (Exception e) {}
+        }
     }
 
     public boolean isLandscape() {
@@ -467,7 +487,8 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         String base = resolveEndpointUrl(rawUrl, "video_stream");
         char sep = (base.indexOf('?') >= 0) ? '&' : '?';
         String sizeParam = isLandscape() ? "&max_w=320&max_h=180" : "&max_w=240&max_h=144";
-        return base + sep + "t=" + startSec + "&fps=8" + sizeParam;
+        String durParam = (durationUs > 0 && base.indexOf("dur=") < 0) ? ("&dur=" + (durationUs / 1000000L)) : "";
+        return base + sep + "t=" + startSec + "&fps=8" + sizeParam + durParam;
     }
 
     private String buildAudioUrl(String rawUrl, long startSec) {
@@ -714,6 +735,10 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
         long currentSec = mediaTimeUs / 1000000L;
         long targetSec = currentSec + deltaSec;
         if (targetSec < 0) targetSec = 0;
+        if (durationUs > 0) {
+            long maxSec = durationUs / 1000000L;
+            if (targetSec > maxSec) targetSec = maxSec;
+        }
 
         if (isVideo) {
             closeStreamConnection();
@@ -1020,12 +1045,19 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
     }
 
     private String formatTime(long us) {
+        if (us < 0) us = 0;
         long totalSec = us / 1000000L;
         long min = totalSec / 60L;
         long sec = totalSec % 60L;
-        String m = String.valueOf(min);
         String s = String.valueOf(sec);
         if (s.length() < 2) s = "0" + s;
-        return m + ":" + s;
+        if (min >= 60) {
+            long hr = min / 60L;
+            min = min % 60L;
+            String m = String.valueOf(min);
+            if (m.length() < 2) m = "0" + m;
+            return hr + ":" + m + ":" + s;
+        }
+        return min + ":" + s;
     }
 }

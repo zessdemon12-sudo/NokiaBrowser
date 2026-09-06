@@ -115,6 +115,40 @@ function formatDuration(sec) {
     return `${h}:${padM}:${padS}`;
 }
 
+function parseDurationToSec(dur) {
+    if (!dur) return 0;
+    if (typeof dur === 'number') return Math.round(dur);
+    if (typeof dur !== 'string') return 0;
+    const parts = dur.trim().split(':').map(p => parseInt(p, 10));
+    if (parts.some(isNaN)) return 0;
+    if (parts.length === 1) return parts[0];
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
+}
+
+const videoDurationCache = new Map();
+
+function setVideoDuration(videoId, sec) {
+    if (videoId && sec > 0) {
+        videoDurationCache.set(videoId, Math.round(sec));
+    }
+}
+
+function getVideoDuration(videoId) {
+    if (!videoId) return 0;
+    if (videoDurationCache.has(videoId)) {
+        return videoDurationCache.get(videoId);
+    }
+    if (videoInfoCache.has(videoId)) {
+        const entry = videoInfoCache.get(videoId);
+        if (entry && entry.data && entry.data.durationSec > 0) {
+            return entry.data.durationSec;
+        }
+    }
+    return 0;
+}
+
 function formatViews(views) {
     if (!views || isNaN(views)) return '';
     const v = parseInt(views, 10);
@@ -171,6 +205,10 @@ async function searchYouTube(query, count = 15) {
                 }
                 const title = item.title || `Video ${id}`;
                 const duration = item.duration_string || formatDuration(item.duration);
+                const durationSec = typeof item.duration === 'number' && item.duration > 0 ? Math.round(item.duration) : parseDurationToSec(duration);
+                if (durationSec > 0) {
+                    setVideoDuration(id, durationSec);
+                }
                 const channel = item.channel || item.uploader || '';
                 const views = formatViews(item.view_count);
                 let desc = item.description || '';
@@ -185,6 +223,7 @@ async function searchYouTube(query, count = 15) {
                     id,
                     title,
                     duration,
+                    durationSec,
                     channel,
                     views,
                     desc,
@@ -219,13 +258,17 @@ async function getVideoInfo(videoId) {
         ], 15000);
 
         const data = JSON.parse(stdout.trim());
+        const durationSec = (typeof data.duration === 'number' && data.duration > 0) ? Math.round(data.duration) : parseDurationToSec(data.duration_string);
+        if (durationSec > 0) {
+            setVideoDuration(videoId, durationSec);
+        }
         const info = {
             id: videoId,
             title: data.title || `YouTube Video ${videoId}`,
             channel: data.channel || data.uploader || 'YouTube Creator',
             views: formatViews(data.view_count),
             duration: data.duration_string || formatDuration(data.duration),
-            durationSec: data.duration || 0,
+            durationSec: durationSec,
             uploadDate: data.upload_date ? `${data.upload_date.substring(0,4)}-${data.upload_date.substring(4,6)}-${data.upload_date.substring(6,8)}` : '',
             desc: data.description || '',
             thumb: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`
@@ -270,6 +313,9 @@ async function getSubscriptionsFeed(count = 15) {
             for (const v of list) {
                 if (v && v.id && v.id.length === 11 && !v.id.startsWith('UC')) {
                     if (!videos.some(existing => existing.id === v.id)) {
+                        if (v.durationSec) {
+                            setVideoDuration(v.id, v.durationSec);
+                        }
                         videos.push(v);
                     }
                 }
@@ -405,7 +451,9 @@ async function handleSubscriptionsPage(res, gatewayHost) {
             const v = videos[i];
             const watchUrl = `https://www.youtube.com/watch?v=${v.id}`;
             const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(v.thumb)}`;
-            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}`;
+            const durSec = v.durationSec || parseDurationToSec(v.duration) || getVideoDuration(v.id);
+            const durParam = durSec > 0 ? `&dur=${durSec}` : '';
+            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}${durParam}`;
 
             lines.push('H2:' + v.title + (v.duration ? ` [${v.duration}]` : ''));
             lines.push('I:' + proxyThumb + '\t' + v.title);
@@ -483,9 +531,10 @@ async function handleWatchPage(videoId, originalUrl, res, gatewayHost, decodeHtm
 
     const watchUrl = originalUrl && originalUrl.startsWith('http') ? originalUrl : `https://www.youtube.com/watch?v=${videoId}`;
     const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(info.thumb)}`;
-    const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}`;
-    const threeGp144pUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}&res=144p`;
-    const durParam = info.durationSec ? `&dur=${info.durationSec}` : '';
+    const durSec = info.durationSec || parseDurationToSec(info.duration) || getVideoDuration(videoId);
+    const durParam = durSec > 0 ? `&dur=${durSec}` : '';
+    const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}${durParam}`;
+    const threeGp144pUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${videoId}&res=144p${durParam}`;
     const audioMedia = `http://${gatewayHost}/video_audio?url=${encodeURIComponent(watchUrl)}${durParam}`;
 
     lines.push('META:TITLE=' + cleanTitle + ' - YouTube');
@@ -582,7 +631,9 @@ async function handleSearchPage(query, originalUrl, res, gatewayHost) {
             const v = videos[i];
             const watchUrl = `https://www.youtube.com/watch?v=${v.id}`;
             const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(v.thumb)}`;
-            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}`;
+            const durSec = v.durationSec || parseDurationToSec(v.duration) || getVideoDuration(v.id);
+            const durParam = durSec > 0 ? `&dur=${durSec}` : '';
+            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}${durParam}`;
 
             lines.push('H2:' + v.title + (v.duration ? ` [${v.duration}]` : ''));
             lines.push('I:' + proxyThumb + '\t' + v.title);
@@ -639,7 +690,9 @@ async function handleHomePage(originalUrl, res, gatewayHost) {
             const v = videos[i];
             const watchUrl = `https://www.youtube.com/watch?v=${v.id}`;
             const proxyThumb = `http://${gatewayHost}/image?url=${encodeURIComponent(v.thumb)}`;
-            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}`;
+            const durSec = v.durationSec || parseDurationToSec(v.duration) || getVideoDuration(v.id);
+            const durParam = durSec > 0 ? `&dur=${durSec}` : '';
+            const threeGpUrl = `http://${gatewayHost}/video.3gp?url=${encodeURIComponent(watchUrl)}&id=${v.id}${durParam}`;
 
             lines.push('H2:' + v.title + (v.duration ? ` [${v.duration}]` : ''));
             lines.push('I:' + proxyThumb + '\t' + v.title);
@@ -677,5 +730,8 @@ module.exports = {
     getAuthState,
     saveAuthState,
     resetToDemo,
-    DEMO_CHANNELS
+    DEMO_CHANNELS,
+    getVideoDuration,
+    setVideoDuration,
+    parseDurationToSec
 };
