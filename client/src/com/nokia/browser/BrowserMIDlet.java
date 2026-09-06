@@ -37,6 +37,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     private TextBox kamTapeSearchBox;
     private TextBox youTubeSearchBox;
     private TextBox arenaPromptBox;
+    private String activeArenaModel = "max";
     private List optionsList;
     private List bookmarksList;
     private List historyList;
@@ -231,7 +232,13 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
     }
 
     public void showArenaPromptDialog() {
-        arenaPromptBox = new TextBox("Arena AI: Max", "", 200, TextField.ANY);
+        showArenaPromptDialog("max");
+    }
+
+    public void showArenaPromptDialog(String model) {
+        if (model != null && model.length() > 0) activeArenaModel = model;
+        else activeArenaModel = "max";
+        arenaPromptBox = new TextBox("Arena AI (" + activeArenaModel + ")", "", 200, TextField.ANY);
         arenaPromptBox.addCommand(cmdOk);
         arenaPromptBox.addCommand(cmdCancel);
         arenaPromptBox.setCommandListener(this);
@@ -535,7 +542,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                     if (norm.equals("arena") || norm.equals("arena.ai") || norm.equals("arena/max") ||
                         norm.equals("arena.ai/max") || norm.equals("arena.ai/text/direct") ||
                         norm.equals("text/direct?model_a=max") || norm.equals("arena.ai/text/direct?model_a=max")) {
-                        showArenaPromptDialog();
+                        loadUrl("https://arena.ai/text/direct?model_a=max", true);
                         return;
                     }
                     if (norm.startsWith("arena ") || norm.startsWith("arena.ai ") || norm.startsWith("max ")) {
@@ -544,7 +551,7 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                         if (q.length() > 0) {
                             loadUrl("https://arena.ai/text/direct?model_a=max&q=" + com.nokia.browser.net.NetworkManager.urlEncode(q), true);
                         } else {
-                            showArenaPromptDialog();
+                            loadUrl("https://arena.ai/text/direct?model_a=max", true);
                         }
                         return;
                     }
@@ -607,9 +614,9 @@ public class BrowserMIDlet extends MIDlet implements CommandListener, NetworkMan
                 String q = arenaPromptBox.getString();
                 display.setCurrent(canvas);
                 if (q != null && q.trim().length() > 0) {
-                    loadUrl("https://arena.ai/text/direct?model_a=max&q=" + com.nokia.browser.net.NetworkManager.urlEncode(q.trim()), true);
+                    loadUrl("https://arena.ai/text/direct?model_a=" + activeArenaModel + "&q=" + com.nokia.browser.net.NetworkManager.urlEncode(q.trim()), true);
                 } else {
-                    loadUrl("https://arena.ai/text/direct?model_a=max", true);
+                    loadUrl("https://arena.ai/text/direct?model_a=" + activeArenaModel, true);
                 }
             } else if (c == cmdCancel) {
                 display.setCurrent(canvas);

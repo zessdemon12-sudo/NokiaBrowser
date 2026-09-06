@@ -1781,8 +1781,21 @@ const server = http.createServer(async (req, res) => {
                 const frogUrl = q ? ('https://www.frogfind.com/?q=' + encodeURIComponent(q)) : 'https://www.frogfind.com';
                 return frogfind.handleFrogFindPage(frogUrl, res, gatewayHost, decodeHtmlEntities, parseAndReflowHtml, formatPagePayload);
             } else if (targetUrl.startsWith('search:arena') || targetUrl.startsWith('search arena')) {
-                const q = targetUrl.replace(/^search:?(\s*arena)?\s*/i, '').trim();
-                const arenaUrl = 'https://arena.ai/text/direct?model_a=max' + (q ? ('&q=' + encodeURIComponent(q)) : '');
+                let stripped = targetUrl.replace(/^search:?(\s*arena)?\s*/i, '').trim();
+                let model = 'max';
+                let q = '';
+                if (stripped.startsWith('?')) {
+                    try {
+                        const sp = new URLSearchParams(stripped);
+                        if (sp.get('model_a')) model = sp.get('model_a');
+                        else if (sp.get('model')) model = sp.get('model');
+                        if (sp.get('q')) q = sp.get('q');
+                        else if (sp.get('prompt')) q = sp.get('prompt');
+                    } catch (e) {}
+                } else {
+                    q = stripped;
+                }
+                const arenaUrl = 'https://arena.ai/text/direct?model_a=' + encodeURIComponent(model) + (q ? ('&q=' + encodeURIComponent(q)) : '');
                 return arena.handleArenaRequest(arenaUrl, req, res, gatewayHost, decodeHtmlEntities);
             } else if (targetUrl === 'arena' || targetUrl === 'arena.ai' || targetUrl === 'arena/max' || targetUrl === 'arena.ai/max' || targetUrl === 'arena.ai/text/direct') {
                 targetUrl = 'https://arena.ai/text/direct?model_a=max';
@@ -1911,10 +1924,19 @@ const server = http.createServer(async (req, res) => {
         const engine = parsedUrl.searchParams.get('engine') || 'bing';
         if (engine === 'arena' || lq.startsWith('arena ') || lq.startsWith('arena:') || lq.startsWith('max ')) {
             let cleanQ = q;
+            let model = parsedUrl.searchParams.get('model_a') || parsedUrl.searchParams.get('model') || 'max';
             if (lq.startsWith('arena:')) cleanQ = q.substring(6).trim();
             else if (lq.startsWith('arena ')) cleanQ = q.substring(6).trim();
             else if (lq.startsWith('max ')) cleanQ = q.substring(4).trim();
-            const arenaUrl = 'https://arena.ai/text/direct?model_a=max' + (cleanQ ? ('&q=' + encodeURIComponent(cleanQ)) : '');
+            if (cleanQ.startsWith('?')) {
+                try {
+                    const sp = new URLSearchParams(cleanQ);
+                    if (sp.get('model_a')) model = sp.get('model_a');
+                    else if (sp.get('model')) model = sp.get('model');
+                    cleanQ = sp.get('q') || sp.get('prompt') || '';
+                } catch (e) {}
+            }
+            const arenaUrl = 'https://arena.ai/text/direct?model_a=' + encodeURIComponent(model) + (cleanQ ? ('&q=' + encodeURIComponent(cleanQ)) : '');
             return arena.handleArenaRequest(arenaUrl, req, res, gatewayHost, decodeHtmlEntities);
         }
         if (engine === 'frogfind') {
