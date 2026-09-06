@@ -52,6 +52,13 @@ async function resolveDirectVideoUrl(targetUrl) {
 // Allow connections to vintage HTTPS servers with legacy/misconfigured certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
+process.on('uncaughtException', (err) => {
+    console.error('[Uncaught Exception]:', err && err.message ? err.message : err);
+});
+process.on('unhandledRejection', (reason) => {
+    console.error('[Unhandled Rejection]:', reason);
+});
+
 const PORT = process.env.PORT || 8080;
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
@@ -1353,6 +1360,7 @@ const server = http.createServer(async (req, res) => {
                 videoUrl
             ]);
             ytProc.stdout.pipe(ffmpeg.stdin);
+            ytProc.stdout.on('error', () => {});
             ytProc.on('error', (err) => console.error('[yt-dlp error]:', err.message));
             req.on('close', () => {
                 try { ytProc.kill(); } catch (e) {}
@@ -1606,6 +1614,7 @@ const server = http.createServer(async (req, res) => {
                 videoUrl
             ]);
             ytAudioProc.stdout.pipe(ffmpeg.stdin);
+            ytAudioProc.stdout.on('error', () => {});
             ytAudioProc.on('error', (err) => console.error('[yt-dlp audio error]:', err.message));
             req.on('close', () => {
                 try { ytAudioProc.kill(); } catch (e) {}
