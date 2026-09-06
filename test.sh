@@ -13,28 +13,25 @@ if [ ! -f "build/NokiaBrowser.jad" ]; then
     ./build.sh
 fi
 
-# 2. Start Gateway Server only if not already running on port 8080
-SERVER_PID=""
-if nc -z 127.0.0.1 8080 2>/dev/null; then
-    echo "[1/2] Gateway already running on port 8080 - reusing it."
-else
-    echo "[1/2] Launching Gateway Server on port 8080..."
-    node server/server.js &
-    SERVER_PID=$!
-    sleep 1
-    echo "      Gateway started (PID $SERVER_PID)"
-fi
+# 2. Always launch fresh Gateway Server on port 8080 to ensure latest code
+echo "[1/2] Launching Gateway Server on port 8080..."
+fuser -k 8080/tcp 2>/dev/null || true
+pkill -f "node server/server.js" 2>/dev/null || true
+sleep 0.5
+node server/server.js &
+SERVER_PID=$!
+sleep 1
+echo "      Gateway started (PID $SERVER_PID)"
 
-# Trap Ctrl+C or exit to kill server only if WE started it
+# Trap Ctrl+C or exit to kill server
 cleanup() {
     echo ""
     if [ -n "$SERVER_PID" ]; then
         echo "Stopping Gateway Server (PID $SERVER_PID)..."
         kill $SERVER_PID 2>/dev/null || true
-        echo "Done."
-    else
-        echo "Gateway was pre-existing - leaving it running."
     fi
+    pkill -f "node server/server.js" 2>/dev/null || true
+    echo "Done."
 }
 trap cleanup EXIT INT TERM
 

@@ -194,26 +194,29 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                     }
                     audioIs = audioConn.openInputStream();
 
-                    // 1. WAV handling: KEmulator & Java Sound Clip require ByteArrayInputStream
-                    // to avoid 'IOException: mark/reset not supported'
+                    // 1. WAV handling: direct streaming for live video companion audio, buffer only short static clips
                     if ((ctype != null && ctype.indexOf("wav") >= 0) || audioUrl.indexOf(".wav") >= 0) {
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        byte[] buf = new byte[2048];
-                        int r;
-                        while ((r = audioIs.read(buf)) != -1) {
-                            baos.write(buf, 0, r);
-                            if (simManager != null) {
-                                simManager.recordBytes(r);
+                        if (audioUrl.indexOf("/video_audio") >= 0) {
+                            player = Manager.createPlayer(audioIs, "audio/x-wav");
+                        } else {
+                            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                            byte[] buf = new byte[2048];
+                            int r;
+                            while ((r = audioIs.read(buf)) != -1) {
+                                baos.write(buf, 0, r);
+                                if (simManager != null) {
+                                    simManager.recordBytes(r);
+                                }
+                                if (baos.size() > 500000) break;
                             }
-                            if (baos.size() > 1500000) break; // 1.5MB max for WAV in RAM
-                        }
-                        try { audioIs.close(); } catch (Throwable t) {}
-                        try { audioConn.close(); } catch (Throwable t) {}
-                        audioIs = null;
-                        audioConn = null;
+                            try { audioIs.close(); } catch (Throwable t) {}
+                            try { audioConn.close(); } catch (Throwable t) {}
+                            audioIs = null;
+                            audioConn = null;
 
-                        ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
-                        player = Manager.createPlayer(bais, "audio/x-wav");
+                            ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+                            player = Manager.createPlayer(bais, "audio/x-wav");
+                        }
                     }
                     // 2. MP3 streaming: KEmulator JLayer & Nokia hardware decode live MP3 stream
                     else if ((ctype != null && (ctype.indexOf("mpeg") >= 0 || ctype.indexOf("mp3") >= 0)) || audioUrl.indexOf(".mp3") >= 0) {
@@ -236,29 +239,32 @@ public class MediaPlayerCanvas extends Canvas implements PlayerListener, Runnabl
                 }
             }
 
-            // Fallback: for /video_audio endpoints always use explicit audio/mpeg stream
-            // to prevent KEmulator routing live MP3 through SampledAudioPlayer (WAV path).
-            // URL-locator form (Manager.createPlayer(url)) is only used for non-gateway URLs.
-            if (player == null) {
-                if (audioUrl.indexOf("/video_audio") >= 0) {
-                    // Re-open fresh connection and force audio/mpeg
-                    try {
-                        if (audioIs != null) { try { audioIs.close(); } catch (Throwable t2) {} audioIs = null; }
-                        if (audioConn != null) { try { audioConn.close(); } catch (Throwable t2) {} audioConn = null; }
-                        audioConn = (HttpConnection) Connector.open(audioUrl, Connector.READ, true);
-                        audioConn.setRequestMethod(HttpConnection.GET);
-                        audioConn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
-                        audioIs = audioConn.openInputStream();
-                        player = Manager.createPlayer(audioIs, "audio/mpeg");
-                    } catch (Throwable t) {
-                        player = null;
-                    }
-                } else {
-                    try {
-                        player = Manager.createPlayer(audioUrl);
-                    } catch (Throwable t) {
-                        player = null;
-                    }
+            // Fallback: if player failed to create (e.g. MP3 unsupported by platform),
+            // switch format (MP3 -> WAV) and re-open stream with universal PCM
+            if (player == null && audioUrl.indexOf("/video_audio") >= 0) {
+                try {
+                    if (audioIs != null) { try { audioIs.close(); } catch (Throwable t2) {} audioIs = null; }
+                    if (audioConn != null) { try { audioConn.close(); } catch (Throwable t2) {} audioConn = null; }
+
+                    boolean wasWav = (audioUrl.indexOf("format=wav") >= 0);
+                    String fallbackUrl = wasWav ?
+                        replaceString(audioUrl, "format=wav", "format=mp3") :
+                        replaceString(audioUrl, "format=mp3", "format=wav");
+                    String fallbackType = wasWav ? "audio/mpeg" : "audio/x-wav";
+
+                    audioConn = (HttpConnection) Connector.open(fallbackUrl, Connector.READ, true);
+                    audioConn.setRequestMethod(HttpConnection.GET);
+                    audioConn.setRequestProperty("User-Agent", "Nokia6300/J2ME");
+                    audioIs = audioConn.openInputStream();
+                    player = Manager.createPlayer(audioIs, fallbackType);
+                } catch (Throwable t) {
+                    player = null;
+                }
+            } else if (player == null) {
+                try {
+                    player = Manager.createPlayer(audioUrl);
+                } catch (Throwable t) {
+                    player = null;
                 }
             }
 

@@ -621,11 +621,13 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
 
         const tmp3gp = path.join(cacheDir, `${cacheKey}_tmp_${Date.now()}.3gp`);
         const cacheWriter = fs.createWriteStream(tmp3gp);
+        cacheWriter.on('error', () => {});
 
         ffmpeg.stdout.pipe(res);
         ffmpeg.stdout.pipe(cacheWriter);
 
         ffmpeg.on('close', (code) => {
+            try { ffmpeg.stdout.unpipe(cacheWriter); } catch (e) {}
             if (code === 0) {
                 try {
                     fs.renameSync(tmp3gp, cachedFilePath);
@@ -657,7 +659,10 @@ async function handle3gpStream(req, res, targetUrl, gatewayHost) {
         })();
 
         req.on('close', () => {
+            try { ffmpeg.stdout.unpipe(res); } catch (e) {}
+            try { ffmpeg.stdout.unpipe(cacheWriter); } catch (e) {}
             try { ffmpeg.kill(); } catch (e) {}
+            try { cacheWriter.end(); } catch (e) {}
             try { fs.unlinkSync(tmp3gp); } catch (e) {}
         });
 
@@ -1243,12 +1248,18 @@ const server = http.createServer(async (req, res) => {
             'Access-Control-Allow-Origin': '*'
         });
 
+        if (!isMp3) {
+            const wavHdr = makeWavHeader(16000, 1, 16, 0x7FFFFFF0);
+            res.write(wavHdr);
+        }
+
         const tempCachePath = cachedFilePath + '.tmp';
         let cacheWriter = null;
         if (sSec === 0) {
             try {
                 if (fs.existsSync(tempCachePath)) fs.unlinkSync(tempCachePath);
                 cacheWriter = fs.createWriteStream(tempCachePath);
+                cacheWriter.on('error', () => {});
                 if (!isMp3) {
                     const wavHdr = makeWavHeader(16000, 1, 16, 0x7FFFFFF0);
                     cacheWriter.write(wavHdr);
@@ -1266,16 +1277,19 @@ const server = http.createServer(async (req, res) => {
         ffmpeg.stderr.on('data', (d) => {});
 
         req.on('close', () => {
-            try { ffmpeg.kill(); } catch (e) {}
+            try { ffmpeg.stdout.unpipe(res); } catch (e) {}
             if (cacheWriter) {
                 try {
+                    ffmpeg.stdout.unpipe(cacheWriter);
                     cacheWriter.end();
                     if (fs.existsSync(tempCachePath)) fs.unlinkSync(tempCachePath);
                 } catch (e) {}
             }
+            try { ffmpeg.kill(); } catch (e) {}
         });
         ffmpeg.on('close', (code) => {
             if (cacheWriter) {
+                try { ffmpeg.stdout.unpipe(cacheWriter); } catch (e) {}
                 cacheWriter.end(() => {
                     if (code === 0) {
                         try {
