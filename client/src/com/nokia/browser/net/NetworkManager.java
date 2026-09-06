@@ -258,7 +258,7 @@ public class NetworkManager {
                 return Image.createImage(data, 0, data.length);
             }
             return null;
-        } catch (Exception e) {
+        } catch (Throwable t) {
             return null;
         } finally {
             if (baos != null) {

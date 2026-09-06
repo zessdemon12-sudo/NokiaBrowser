@@ -84,6 +84,64 @@ function decodeBingUrl(rawUrl) {
     return rawUrl;
 }
 
+function extractImageInfo(imgTagOrAttrs, baseUrl) {
+    if (!imgTagOrAttrs) return null;
+    let src = '';
+    const srcMatch = imgTagOrAttrs.match(/\bsrc=["']?([^"'\s>]+)["']?/i);
+    const dataSrcMatch = imgTagOrAttrs.match(/\b(?:data-src|data-original|data-lazy-src|data-url)=["']?([^"'\s>]+)["']?/i);
+    const srcsetMatch = imgTagOrAttrs.match(/\b(?:srcset|data-srcset)=["']?([^"'>]+)["']?/i);
+
+    const isPlaceholder = (s) => !s || s.startsWith('data:') || s.includes('placeholder') || s.includes('spacer') || s.includes('blank.gif');
+
+    let candidateFromSrcset = null;
+    if (srcsetMatch) {
+        const entries = srcsetMatch[1].split(',').map(s => s.trim().split(/\s+/));
+        for (const entry of entries) {
+            const u = entry[0];
+            const w = entry[1];
+            if (w && (w.endsWith('w') || w.endsWith('x'))) {
+                const val = parseInt(w, 10);
+                if (val >= 160 && val <= 480) {
+                    candidateFromSrcset = u;
+                    break;
+                }
+            }
+        }
+        if (!candidateFromSrcset && entries.length > 0 && !isPlaceholder(entries[0][0])) {
+            candidateFromSrcset = entries[0][0];
+        }
+    }
+
+    if (candidateFromSrcset && !isPlaceholder(candidateFromSrcset)) {
+        src = candidateFromSrcset;
+    } else if (srcMatch && !isPlaceholder(srcMatch[1])) {
+        src = srcMatch[1];
+    } else if (dataSrcMatch && !isPlaceholder(dataSrcMatch[1])) {
+        src = dataSrcMatch[1];
+    } else if (srcMatch && !srcMatch[1].startsWith('data:')) {
+        src = srcMatch[1];
+    }
+
+    if (!src) return null;
+
+    src = decodeHtmlEntities(src).trim();
+    if (src.startsWith('//')) {
+        src = 'https:' + src;
+    }
+
+    try {
+        const absUrl = new URL(src, baseUrl).toString();
+        let alt = '';
+        const altMatch = imgTagOrAttrs.match(/\balt=["']?([^"']*)["']?/i);
+        if (altMatch) {
+            alt = decodeHtmlEntities(altMatch[1]).trim();
+        }
+        return { url: absUrl, alt: alt || 'Image' };
+    } catch (e) {
+        return null;
+    }
+}
+
 function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
     const loadImages = options.img !== '0';
     let html = rawHtml;
@@ -94,6 +152,10 @@ function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
         title = decodeHtmlEntities(titleMatch[1].replace(/\s+/g, ' ').trim());
     }
 
+    // Resolve base tag if present
+    const baseMatch = html.match(/<base\b[^>]*href=["']([^"']+)["']/i);
+    const effectiveBaseUrl = baseMatch ? new URL(baseMatch[1], baseUrl).toString() : baseUrl;
+
     html = html.replace(/<!--[\s\S]*?-->/g, '');
     html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
     html = html.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
@@ -102,6 +164,19 @@ function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
     html = html.replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, '');
 
     const elements = [];
+    const seenImages = new Set();
+    const maxElements = 350;
+    let count = 0;
+
+    function addImage(imgTagOrAttrs) {
+        if (!loadImages || count >= maxElements) return;
+        const info = extractImageInfo(imgTagOrAttrs, effectiveBaseUrl);
+        if (info && !seenImages.has(info.url)) {
+            seenImages.add(info.url);
+            elements.push({ type: 'img', url: info.url, alt: info.alt });
+            count++;
+        }
+    }
 
     // Audio tags
     const audioRegex = /<audio\b([^>]*)>([\s\S]*?)<\/audio>/gi;
@@ -118,7 +193,7 @@ function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
         }
         if (src) {
             try {
-                const absSrc = new URL(src, baseUrl).toString();
+                const absSrc = new URL(src, effectiveBaseUrl).toString();
                 elements.push({ type: 'audio', url: absSrc, title: 'Audio: ' + path.basename(absSrc.split('?')[0]) });
             } catch (e) {}
         }
@@ -139,17 +214,15 @@ function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
         }
         if (src) {
             try {
-                const absSrc = new URL(src, baseUrl).toString();
+                const absSrc = new URL(src, effectiveBaseUrl).toString();
                 elements.push({ type: 'video', url: absSrc, title: 'Video: ' + path.basename(absSrc.split('?')[0]) });
             } catch (e) {}
         }
     }
 
-    // Structural body tags
-    const tagRegex = /<(h[1-6]|p|blockquote|li|a|img|hr)\b([^>]*)>([\s\S]*?)<\/\1>|<(img|hr)\b([^>]*)>/gi;
+    // Structural body tags (void tags img and hr matched as self-closing)
+    const tagRegex = /<(h[1-6]|p|blockquote|li|a|figure)\b([^>]*)>([\s\S]*?)<\/\1>|<(img|hr)\b([^>]*)>/gi;
     let match;
-    let count = 0;
-    const maxElements = 200;
 
     while ((match = tagRegex.exec(html)) !== null && count < maxElements) {
         const tag = (match[1] || match[4] || '').toLowerCase();
@@ -163,12 +236,29 @@ function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
                 elements.push({ type: 'heading', level: parseInt(tag.substring(1), 10), text: cleanText });
                 count++;
             }
+        } else if (tag === 'figure') {
+            const figImgs = inner.match(/<img\b[^>]*>/gi);
+            if (figImgs) {
+                for (let fi = 0; fi < figImgs.length; fi++) addImage(figImgs[fi]);
+            }
+            const figCap = inner.match(/<figcaption\b[^>]*>([\s\S]*?)<\/figcaption>/i);
+            if (figCap) {
+                const cap = decodeHtmlEntities(figCap[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+                if (cap.length > 0) {
+                    elements.push({ type: 'p', text: cap });
+                    count++;
+                }
+            }
         } else if (tag === 'p' || tag === 'blockquote') {
+            const pImgs = inner.match(/<img\b[^>]*>/gi);
+            if (pImgs) {
+                for (let pi = 0; pi < pImgs.length; pi++) addImage(pImgs[pi]);
+            }
             if (cleanText.length > 0) {
                 const linkMatch = inner.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
                 if (linkMatch && cleanText.length < 80) {
                     try {
-                        const absLink = new URL(linkMatch[1], baseUrl).toString();
+                        const absLink = new URL(linkMatch[1], effectiveBaseUrl).toString();
                         const linkText = decodeHtmlEntities(linkMatch[2].replace(/<[^>]+>/g, '').trim()) || cleanText;
                         elements.push({ type: 'link', url: absLink, text: linkText });
                         count++;
@@ -179,56 +269,44 @@ function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
                 count++;
             }
         } else if (tag === 'li') {
+            const liImgs = inner.match(/<img\b[^>]*>/gi);
+            if (liImgs) {
+                for (let li = 0; li < liImgs.length; li++) addImage(liImgs[li]);
+            }
             if (cleanText.length > 0) {
                 elements.push({ type: 'li', text: cleanText });
                 count++;
             }
         } else if (tag === 'a') {
+            const aImgs = inner.match(/<img\b[^>]*>/gi);
+            if (aImgs) {
+                for (let ai = 0; ai < aImgs.length; ai++) addImage(aImgs[ai]);
+            }
             const hrefMatch = attrs.match(/href=["']([^"']+)["']/i);
-            if (hrefMatch && cleanText.length > 0) {
+            if (hrefMatch) {
                 const href = hrefMatch[1];
                 if (!href.startsWith('javascript:') && !href.startsWith('#')) {
                     try {
-                        const absUrl = new URL(href, baseUrl).toString();
+                        const absUrl = new URL(href, effectiveBaseUrl).toString();
                         const lower = absUrl.toLowerCase();
                         if (lower.endsWith('.mp3') || lower.endsWith('.wav') || lower.endsWith('.aac') || lower.endsWith('.amr')) {
-                            elements.push({ type: 'audio', url: absUrl, title: cleanText });
+                            elements.push({ type: 'audio', url: absUrl, title: cleanText || 'Audio' });
+                            count++;
                         } else if (lower.endsWith('.mp4') || lower.endsWith('.3gp') || lower.endsWith('.avi')) {
-                            elements.push({ type: 'video', url: absUrl, title: cleanText });
+                            elements.push({ type: 'video', url: absUrl, title: cleanText || 'Video' });
+                            count++;
                         } else {
-                            elements.push({ type: 'link', url: absUrl, text: cleanText });
+                            const linkText = cleanText.length > 0 ? cleanText : (aImgs && elements.length > 0 && elements[elements.length - 1].type === 'img' ? `[${elements[elements.length - 1].alt || 'Image Link'}]` : '');
+                            if (linkText.length > 0) {
+                                elements.push({ type: 'link', url: absUrl, text: linkText });
+                                count++;
+                            }
                         }
-                        count++;
                     } catch (e) {}
                 }
             }
-        } else if (tag === 'img' && loadImages) {
-            let src = '';
-            const srcMatch = attrs.match(/src=["']([^"']+)["']/i);
-            if (srcMatch && !srcMatch[1].startsWith('data:')) {
-                src = srcMatch[1];
-            } else {
-                const dataSrcMatch = attrs.match(/data-src=["']([^"']+)["']/i) || attrs.match(/data-original=["']([^"']+)["']/i);
-                if (dataSrcMatch) {
-                    src = dataSrcMatch[1];
-                } else {
-                    const srcsetMatch = attrs.match(/srcset=["']([^"']+)["']/i);
-                    if (srcsetMatch) {
-                        const firstEntry = srcsetMatch[1].split(',')[0].trim().split(/\s+/)[0];
-                        if (firstEntry && !firstEntry.startsWith('data:')) src = firstEntry;
-                    }
-                }
-            }
-            if (src) {
-                try {
-                    const absImg = new URL(src, baseUrl).toString();
-                    let alt = '';
-                    const altMatch = attrs.match(/alt=["']([^"']+)["']/i);
-                    if (altMatch) alt = decodeHtmlEntities(altMatch[1]).trim();
-                    elements.push({ type: 'img', url: absImg, alt: alt || 'Image' });
-                    count++;
-                } catch (e) {}
-            }
+        } else if (tag === 'img') {
+            addImage(match[0]);
         } else if (tag === 'hr') {
             elements.push({ type: 'hr' });
             count++;
@@ -249,7 +327,7 @@ function parseAndReflowHtml(rawHtml, baseUrl, isHttps, options = {}) {
 
     return {
         title: title,
-        url: baseUrl,
+        url: effectiveBaseUrl,
         isHttps: isHttps,
         elements: elements
     };
@@ -275,7 +353,8 @@ function formatPagePayload(pageData, gatewayHost) {
             lines.push('L:' + el.url + '\t' + el.text);
         } else if (el.type === 'img') {
             const proxyImgUrl = 'http://' + gatewayHost + '/image?url=' + encodeURIComponent(el.url);
-            lines.push('I:' + proxyImgUrl + '\t' + (el.alt || ''));
+            const cleanAlt = (el.alt || 'Image').replace(/[\t\r\n]+/g, ' ').trim();
+            lines.push('I:' + proxyImgUrl + '\t' + cleanAlt);
         } else if (el.type === 'audio') {
             const proxyAudioUrl = el.url.startsWith('http://' + gatewayHost) ? el.url : ('http://' + gatewayHost + '/media?url=' + encodeURIComponent(el.url));
             lines.push('A:' + proxyAudioUrl + '\t' + (el.title || 'Audio'));
@@ -730,6 +809,65 @@ function makeWavHeader(sampleRate, channels, bitsPerSample, totalDataBytes) {
 const imageMemoryCache = new Map();
 const MAX_MEM_IMAGE_CACHE = 60;
 
+function transcodeSvgToPng(svgBuffer, maxWidth) {
+    return new Promise((resolve, reject) => {
+        const py = spawn('python3', ['-c', `
+import cairosvg, sys
+data = sys.stdin.buffer.read()
+png = cairosvg.svg2png(bytestring=data, output_width=${maxWidth})
+sys.stdout.buffer.write(png)
+`]);
+        const chunks = [];
+        py.stdout.on('data', c => chunks.push(c));
+        py.on('close', code => {
+            const out = Buffer.concat(chunks);
+            if (code === 0 && out.length > 50) {
+                resolve(out);
+            } else {
+                reject(new Error('cairosvg failed with exit code ' + code));
+            }
+        });
+        py.on('error', err => reject(err));
+        py.stdin.write(svgBuffer);
+        py.stdin.end();
+    });
+}
+
+function transcodeWithPillow(inputBuffer, maxWidth) {
+    return new Promise((resolve, reject) => {
+        const py = spawn('python3', ['-c', `
+from PIL import Image
+import sys, io
+try:
+    img = Image.open(io.BytesIO(sys.stdin.buffer.read()))
+    if img.mode not in ('RGB', 'RGBA', 'L'):
+        img = img.convert('RGBA')
+    w, h = img.size
+    if w > ${maxWidth}:
+        new_h = max(1, int(h * ${maxWidth} / w))
+        img = img.resize((${maxWidth}, new_h), Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    img.save(out, format='PNG', optimize=True)
+    sys.stdout.buffer.write(out.getvalue())
+except Exception as e:
+    sys.exit(1)
+`]);
+        const chunks = [];
+        py.stdout.on('data', c => chunks.push(c));
+        py.on('close', code => {
+            const out = Buffer.concat(chunks);
+            if (code === 0 && out.length > 50) {
+                resolve(out);
+            } else {
+                reject(new Error('Pillow failed with exit code ' + code));
+            }
+        });
+        py.on('error', err => reject(err));
+        py.stdin.write(inputBuffer);
+        py.stdin.end();
+    });
+}
+
 /**
  * Handle Image Proxying & Transcoding
  * Converts any image format (WebP, AVIF, JPEG, PNG, GIF, SVG) to a 220px-wide PNG
@@ -737,9 +875,13 @@ const MAX_MEM_IMAGE_CACHE = 60;
  */
 async function handleImageProxy(res, targetUrl, maxWidth = 220) {
     try {
-        let cleanUrl = targetUrl;
+        let cleanUrl = decodeHtmlEntities(targetUrl).trim();
         if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
-            cleanUrl = 'https://' + cleanUrl;
+            if (cleanUrl.startsWith('//')) {
+                cleanUrl = 'https:' + cleanUrl;
+            } else {
+                cleanUrl = 'https://' + cleanUrl;
+            }
         }
 
         const cacheSuffix = (maxWidth !== 220) ? `_w${maxWidth}` : '';
@@ -802,54 +944,95 @@ async function handleImageProxy(res, targetUrl, maxWidth = 220) {
             throw new Error('Empty image received');
         }
 
-        // Transcode to PNG max-width using ffmpeg
-        const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
-        const scaleFilter = `scale='min(${maxWidth},iw)':-1`;
-        const ffmpeg = spawn(ffmpegPath, [
-            '-y',
-            '-i', 'pipe:0',
-            '-vf', scaleFilter,
-            '-vframes', '1',
-            '-f', 'image2',
-            '-c:v', 'png',
-            'pipe:1'
-        ]);
+        const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+        const isSvg = contentType.includes('svg') ||
+                      cleanUrl.toLowerCase().split('?')[0].endsWith('.svg') ||
+                      inputBuffer.slice(0, 100).toString('utf8').includes('<svg');
 
-        const chunks = [];
-        ffmpeg.stdout.on('data', c => chunks.push(c));
-        ffmpeg.stdin.on('error', () => {});
-        ffmpeg.stdout.on('error', () => {});
+        let pngBuf = null;
 
-        ffmpeg.on('close', () => {
-            const pngBuf = Buffer.concat(chunks);
-            if (pngBuf.length > 50) {
-                try { fs.writeFileSync(cachedPath, pngBuf); } catch (e) {}
-                if (imageMemoryCache.size >= MAX_MEM_IMAGE_CACHE) {
-                    const firstKey = imageMemoryCache.keys().next().value;
-                    imageMemoryCache.delete(firstKey);
-                }
-                imageMemoryCache.set(cacheKey, pngBuf);
-
-                res.writeHead(200, {
-                    'Content-Type': 'image/png',
-                    'Content-Length': pngBuf.length,
-                    'Cache-Control': 'public, max-age=86400',
-                    'Access-Control-Allow-Origin': '*'
-                });
-                return res.end(pngBuf);
-            } else {
-                res.writeHead(200, {
-                    'Content-Type': resp.headers.get('content-type') || 'image/png',
-                    'Content-Length': inputBuffer.length,
-                    'Cache-Control': 'public, max-age=86400',
-                    'Access-Control-Allow-Origin': '*'
-                });
-                return res.end(inputBuffer);
+        // Vector SVG path: transcode via cairosvg
+        if (isSvg) {
+            try {
+                pngBuf = await transcodeSvgToPng(inputBuffer, maxWidth);
+            } catch (svgErr) {
+                console.warn('[Image Proxy] cairosvg transcode failed:', svgErr.message);
             }
-        });
+        }
 
-        ffmpeg.stdin.write(inputBuffer);
-        ffmpeg.stdin.end();
+        // Raster path: transcode via FFmpeg
+        if (!pngBuf) {
+            pngBuf = await new Promise((resolve) => {
+                const ffmpegPath = path.join(__dirname, '..', 'tools', 'ffmpeg');
+                const scaleFilter = `scale='min(${maxWidth},iw)':-1`;
+                const ffmpeg = spawn(ffmpegPath, [
+                    '-y',
+                    '-i', 'pipe:0',
+                    '-vf', scaleFilter,
+                    '-vframes', '1',
+                    '-f', 'image2',
+                    '-c:v', 'png',
+                    '-compression_level', '9',
+                    '-pred', 'mixed',
+                    'pipe:1'
+                ]);
+
+                const chunks = [];
+                ffmpeg.stdout.on('data', c => chunks.push(c));
+                ffmpeg.stdin.on('error', () => {});
+                ffmpeg.stdout.on('error', () => {});
+                ffmpeg.on('close', (code) => {
+                    const out = Buffer.concat(chunks);
+                    if (out.length > 50) {
+                        resolve(out);
+                    } else {
+                        resolve(null);
+                    }
+                });
+                ffmpeg.stdin.write(inputBuffer);
+                ffmpeg.stdin.end();
+            });
+        }
+
+        // Fallback: transcode via Pillow
+        if (!pngBuf) {
+            try {
+                pngBuf = await transcodeWithPillow(inputBuffer, maxWidth);
+            } catch (pilErr) {
+                console.warn('[Image Proxy] Pillow transcode failed:', pilErr.message);
+            }
+        }
+
+        // Save and serve PNG
+        if (pngBuf && pngBuf.length > 50) {
+            try { fs.writeFileSync(cachedPath, pngBuf); } catch (e) {}
+            if (imageMemoryCache.size >= MAX_MEM_IMAGE_CACHE) {
+                const firstKey = imageMemoryCache.keys().next().value;
+                imageMemoryCache.delete(firstKey);
+            }
+            imageMemoryCache.set(cacheKey, pngBuf);
+
+            res.writeHead(200, {
+                'Content-Type': 'image/png',
+                'Content-Length': pngBuf.length,
+                'Cache-Control': 'public, max-age=86400',
+                'Access-Control-Allow-Origin': '*'
+            });
+            return res.end(pngBuf);
+        }
+
+        // Ultimate fallback: if original was PNG or JPEG, serve it directly
+        if (contentType.includes('png') || contentType.includes('jpeg') || contentType.includes('jpg')) {
+            res.writeHead(200, {
+                'Content-Type': contentType,
+                'Content-Length': inputBuffer.length,
+                'Cache-Control': 'public, max-age=86400',
+                'Access-Control-Allow-Origin': '*'
+            });
+            return res.end(inputBuffer);
+        }
+
+        throw new Error('Image could not be transcoded to PNG');
 
     } catch (e) {
         console.error('[Image Proxy Error]', e.message);

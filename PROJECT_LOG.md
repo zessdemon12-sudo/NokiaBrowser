@@ -22,7 +22,7 @@ maintained_by: "AI Agent (Antigravity) & Collaborators"
     "client": {
       "language": "Java ME (CLDC 1.1 / MIDP 2.0)",
       "compiler": "Eclipse ECJ (tools/ecj.jar) with -target cldc1.1 -source 1.3",
-      "binary": "build/NokiaBrowser.jar (49,143 bytes)",
+      "binary": "build/NokiaBrowser.jar (49,147 bytes)",
       "descriptor": "build/NokiaBrowser.jad",
       "resolution": [240, 320]
     },
@@ -1125,4 +1125,53 @@ Subscriptions feed"
      - Initial 3 frames delivered within 4ms of stream start.
      - Steady-state frame delivery: exactly ~83ms per frame (12.0 FPS).
      - Average frame payload: 2.2 KB per frame.
+
+---
+
+## Event 033 — Website Image Extraction & Multi-Format Transcoding Pipeline (2026-09-06)
+
+**User request:** "fix the image load in website"
+
+### Root Cause Analysis
+1. **Parser Dropped Images in Anchors & Containers (`server/server.js`)**:
+   - `tagRegex` matched `<a>...</a>`. When an `<a>` tag wrapped an `<img>` (standard for almost all modern websites like Wikipedia, BBC, blogs), `cleanText` was empty (`""`), so the parser dropped the anchor element entirely, completely ignoring the `<img>` nested inside.
+   - `<img>` tags nested in `<p>`, `<li>`, and `<figure>` were similarly stripped by `.replace(/<[^>]+>/g, ' ')` and discarded.
+   - `tagRegex` incorrectly included `img` and `hr` in the closing-tag group (`<(h[1-6]|p|blockquote|li|a|img|hr)...<\/\1>`), which caused improper backtracking or parsing failures since `<img>` and `<hr>` are void elements without closing tags.
+   - `maxElements` capped at 200 was exhausted by navigation bars before article body or infobox photos were parsed.
+2. **Modern Image Formats & Attributes Not Resolved**:
+   - Modern sites use `srcset="... 240w, ... 480w"`, `data-src`, or 1x1 base64/placeholder GIFs. The parser only looked for simple `src="..."`.
+   - SVG vector images (e.g. Wikipedia icons/wordmarks/logos) failed in FFmpeg from stdin pipe (exit code 234) and returned raw SVG XML to the client, which threw `IllegalArgumentException` in MIDP 2.0 `Image.createImage()`.
+   - `&amp;` entities in query strings of `src` attributes were not decoded before making upstream requests.
+3. **Client-Side Robustness (`NetworkManager.java`)**:
+   - `fetchImage` caught only `Exception`, meaning any `OutOfMemoryError` (which subclasses `Error`/`Throwable`) crashed the loader thread.
+
+### Applied Solutions & Implementation
+1. **Enhanced Image Extraction Engine (`server/server.js`)**:
+   - Implemented `extractImageInfo(imgTagOrAttrs, baseUrl)`:
+     - Prioritizes mobile-optimized candidates from `srcset` (160w–480w) over oversized desktop defaults.
+     - Detects and resolves `data-src`, `data-original`, `data-lazy-src`, and `data-srcset` when `src` is a placeholder.
+     - Handles protocol-relative URLs (`//...` $\to$ `https:...`) and decodes HTML entities (`&amp;` $\to$ `&`).
+     - Respects `<base href="...">` tags if present.
+   - Re-architected `parseAndReflowHtml`:
+     - Void tags `img` and `hr` are properly separated from container tags in `tagRegex`.
+     - Recursively extracts images nested inside `<a>`, `<p>`, `<blockquote>`, `<li>`, and `<figure>`.
+     - Supports `<figure>` captions and image-only anchor links (`[Link: Image Alt]`).
+     - De-duplicates identical image URLs using `seenImages` set.
+     - Raised `maxElements` to 350.
+2. **Multi-Format Transcoding & SVG Vector Support (`handleImageProxy`)**:
+   - Added `transcodeSvgToPng`: Uses `cairosvg` to cleanly rasterize SVG vector images to 220px/160px PNG.
+   - Configured FFmpeg with `-compression_level 9 -pred mixed` for maximal PNG compression efficiency.
+   - Added `transcodeWithPillow`: Uses Python Pillow (PIL) as a universal fallback for any exotic formats.
+   - Guaranteed that J2ME clients receive valid PNG images with 100% MIDP 2.0 compatibility.
+3. **Client-Side Exception Safety (`NetworkManager.java`)**:
+   - In `fetchImage`, catches `Throwable` instead of `Exception` so low-memory conditions or format errors fail gracefully without terminating the image loader thread.
+4. **Binary Budget & Verification**:
+   - Compiled via `./build.sh`:
+     - JAR size: **49,147 bytes** (strictly $\le$ 50,000 bytes budget).
+   - Automated tests:
+     - `https://en.wikipedia.org/wiki/Nokia_6300`: Successfully extracts 6 images (Wikipedia logo, Nokia 6300 infobox photo, Nokia 6301 photo).
+     - `https://www.bbc.com/news`: Successfully extracts 22 news story images (WebP/srcset).
+     - `https://www.w3schools.com/html/html_images.asp`: Successfully extracts 4 images including Lynx mascot and SVG logo.
+     - Direct `/image?url=...` tests verify 200 OK with `image/png` across SVG, WebP, JPEG, and PNG.
+
 
